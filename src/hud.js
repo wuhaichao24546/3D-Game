@@ -37,6 +37,29 @@ export class HUD {
     this._toasts = [];
     this._qbSlots = null;
     this._invOpen = false;
+    this.bossBarEl = document.getElementById('boss-bar');
+    this.bossNameEl = document.getElementById('boss-name');
+    this.bossFillEl = document.getElementById('boss-fill');
+    this.bossCastEl = document.getElementById('boss-cast');
+    this.killBannerEl = document.getElementById('kill-banner');
+  }
+
+  // Boss 横幅血条（b 为 Boss 对象或 null）
+  bossBar(b) {
+    if (!b || !b.alive) { this.bossBarEl.classList.add('hidden'); return; }
+    this.bossBarEl.classList.remove('hidden');
+    this.bossNameEl.textContent = `「${b.def.name}」`;
+    this.bossFillEl.style.width = `${Math.max(0, (b.hp / b.maxHp) * 100)}%`;
+    this.bossFillEl.classList.toggle('enrage', b.phase === 3);
+  }
+  bossCast(name) { this.showBanner(`玄蛟运咒 · ${name}！`, 1500); }
+
+  // 斩杀大字
+  killBanner(text) {
+    this.killBannerEl.textContent = text;
+    this.killBannerEl.classList.add('show');
+    clearTimeout(this._killT);
+    this._killT = setTimeout(() => this.killBannerEl.classList.remove('show'), 2000);
   }
 
   update(cult) {
@@ -135,7 +158,8 @@ export class HUD {
       const gap = (b.lv || 5) - playerLv;
       const cls = gap >= 9 ? 'lv-high' : gap <= -9 ? 'lv-low' : '';
       if (tag.lvCls !== cls) { tag.el.classList.remove('lv-high', 'lv-low'); if (cls) tag.el.classList.add(cls); tag.lvCls = cls; }
-      tag.nameEl.textContent = `${b.def.name} · Lv${b.lv}`;
+      tag.el.classList.toggle('elite', !!b.elite);
+      tag.nameEl.textContent = `${b.elite ? '凶兽·' : ''}${b.def.name} · Lv${b.lv}`;
       _v.copy(b.mesh.position).y += (b.def.kind === 'turtle' ? 1.0 : 1.5);
       _v.project(camera);
       if (_v.z > 1) { tag.el.style.display = 'none'; continue; }

@@ -278,6 +278,7 @@ export class Player {
     this.lastHurt = -99;
     this.defenseMult = 1;        // 土灵根减伤
     this.slowFactor = 1;         // 吟唱减速 0.3
+    this.casting = false;        // 结印施法中（覆盖手臂动画）
     this.onHurt = null;          // (dealt)=>void HUD 反馈
     this.onDeath = null;         // ()=>void 重伤遁返
   }
@@ -370,6 +371,16 @@ export class Player {
       ref.bone.quaternion.slerp(ref.rest.clone().multiply(target), 0.2);
     };
     const runK = THREE.MathUtils.clamp(spd / RUN, 0, 1);
+    if (this.casting) {
+      // 结印：双手胸前合拢结咒印，前臂内旋、手指向上
+      this.animT += dt * 2;
+      set('mixamorigLeftArm', -0.55, 0.5, -0.7);
+      set('mixamorigRightArm', -0.55, -0.5, 0.7);
+      set('mixamorigLeftForeArm', -1.15, -0.35, 0.2);
+      set('mixamorigRightForeArm', -1.15, 0.35, -0.2);
+      set('mixamorigSpine1', 0.05, 0, 0);
+      return;
+    }
     if (spd > 0.5) {
       this.animT += dt * (4 + runK * 7);
       const s = Math.sin(this.animT), c = Math.cos(this.animT);

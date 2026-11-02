@@ -16,6 +16,7 @@ export const ITEMS = {
   mat_wolf_fang: { name: '焰狼牙', kind: 'material', desc: '焰狼利齿，嵌刃之物', stack: 50 },
   mat_horse_mane: { name: '骏灵鬃', kind: 'material', desc: '灵驹鬃毛，踏风而行', stack: 50 },
   mat_bird_feather: { name: '鸾羽', kind: 'material', desc: '青鸾翎羽，轻灵之物', stack: 50 },
+  mat_jiao_scale: { name: '玄蛟逆鳞', kind: 'material', desc: '千年玄蛟颈下逆鳞，坚逾玄铁，炼器神材', stack: 10 },
 };
 
 // ---------- 背包 ----------

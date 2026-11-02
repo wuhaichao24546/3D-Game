@@ -127,6 +127,10 @@ async function start() {
     b.playerLevel = () => lv;
     b.populate(spawn);
     beasts = b;
+    // 千年玄蛟：盘踞灵湖
+    const lake = world.landmarks?.find?.(L => L.name && L.name.includes('湖'));
+    b.spawnBoss(lake ? lake.x : -24, lake ? lake.z : -16);
+    b.onBossCast = (name) => hud.bossCast(name);
     if (window.__game) window.__game.beasts = b;
   });
   window.__game = { scene, camera, player, beasts: null, world, THREE, renderer };
@@ -273,6 +277,11 @@ async function start() {
     bursts.spawn(b.mesh.position, 0xaef0c8, 40, 7);
     pickups.spawnDrops(b.mesh.position, res.drops);
     if (broke) breakthrough(broke);
+    if (res.def.boss) {
+      hud.killBanner('斩 杀');
+      shakeAmp = Math.max(shakeAmp, 0.5);
+      hud.showBanner('千年玄蛟已诛 · 天地同贺', 3200);
+    }
   }
 
   const skillCtx = {
@@ -326,6 +335,7 @@ async function start() {
       else renderer.domElement.requestPointerLock?.();
     } else {
       if (e.code === 'KeyR') { skills.castUlt(skillCtx); return; }
+      if (e.code === 'KeyT') { skills.castDomain(skillCtx); return; }
       const digit = 'Digit1 Digit2 Digit3 Digit4 Digit5 Digit6'.split(' ').indexOf(e.code);
       if (digit >= 0) {
         const d = SKILL_DEFS[digit];
@@ -433,7 +443,7 @@ async function start() {
       else if (dealt > 0) hud.floater(player.position, `-${dealt}`, 'hurt');
     });
     projectiles.update(dt, beasts?.targets || [], (beast) => {
-      const c = calcDamage(stats.atk * stats.swordMult, lv, beast.lv, beast.stats.def, stats.crit);
+      const c = calcDamage(stats.atk * stats.swordMult * skills.atkBuff(skillCtx), lv, beast.lv, beast.stats.def, stats.crit);
       const res = beasts.damage(beast, c.dealt, '剑气');
       if (res) {
         skills.addFury(res.killed ? 20 : 6);
@@ -445,6 +455,7 @@ async function start() {
     });
     bursts.update(dt);
     skills.update(dt);
+    if (beasts) { beasts.domain = skills.domain; hud.bossBar(beasts.boss); }
     pickups.update(dt, player.position, (d) => {
       if (d.stones) {
         cult.spiritStones += d.stones;

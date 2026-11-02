@@ -31,7 +31,16 @@ export class Skills {
     this.casting = null;     // {name, t, dur, done} 吟唱状态
     this.ultActive = false;  // 大招进行中（子弹时间/运镜）
     this.ultCam = 0;         // >0 时相机拉近
+    this.domain = null;      // 灵压阵 {x,z,r,mesh}（域内攻+30%、回蓝×2、敌减速）
+    this.player = null;      // use() 时记住玩家引用
+    this.sealOrb = null;     // 结印掌心符文球
   }
+
+  // 灵压阵内判定 + 攻力加成
+  inDomain(pos) {
+    return !!(this.domain && pos && Math.hypot(pos.x - this.domain.x, pos.z - this.domain.z) < this.domain.r);
+  }
+  atkBuff(ctx) { return this.inDomain(ctx.player?.position) ? 1.3 : 1; }
 
   addFury(n, ctx) {
     this.fury = Math.min(100, this.fury + n);
@@ -42,9 +51,10 @@ export class Skills {
   interrupt(ctx) {
     if (this.casting) {
       ctx.hud.showBanner(`施法被打断 · ${this.casting.name}`, 1300);
+      if (this.casting.orb) ctx.scene.remove(this.casting.orb);
       this.casting = null;
       ctx.hud.castBar(null);
-      if (ctx.player) ctx.player.slowFactor = 1;
+      if (ctx.player) { ctx.player.slowFactor = 1; ctx.player.casting = false; }
     }
     if (this.ultRefund) { this.fury = Math.min(100, this.fury + 40); this.ultRefund = false; }
   }
@@ -69,6 +79,7 @@ export class Skills {
     if (this.mana < def.cost) { ctx.hud.showBanner('真元不足', 1000); return false; }
     this.mana -= def.cost;
     this.cooldowns[idx] = def.cd;
+    this.player = ctx.player;
     this[`cast${idx + 1}`](ctx);
     ctx.hud.showBanner(`施法 · ${def.name}`, 1100);
     return true;
@@ -77,7 +88,7 @@ export class Skills {
   // ---- 1 剑雨：目标点范围落剑 ----
   cast1(ctx) {
     const target = aimPoint(ctx, 34);
-    const dmg = ctx.stats.atk * 1.6 * ctx.linggen.swordMult;
+    const dmg = ctx.stats.atk * this.atkBuff(ctx) * 1.6 * ctx.linggen.swordMult;
     const group = new THREE.Group();
     const blades = [];
     for (let i = 0; i < 12; i++) {
@@ -116,12 +127,19 @@ export class Skills {
       done: () => this.boltAt(ctx, target),
     };
     ctx.player.slowFactor = 0.3; // 吟唱中移动迟缓
+    ctx.player.casting = true;   // 结印手势
     this.startCasting(ctx);
+    // 掌心符文光球随读条变大
+    const orb = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 10), ADD(0xffd97a, 0.9));
+    orb.position.copy(ctx.player.position).add(new THREE.Vector3(0, 1.35, 0.5));
+    ctx.scene.add(orb);
+    this.sealOrb = orb;
+    this.casting.orb = orb;
     ctx.hud.castBar(0, '雷符');
   }
 
   boltAt(ctx, target) {
-    const dmg = ctx.stats.sp * 1.5 * ctx.linggen.spellMult;
+    const dmg = ctx.stats.sp * this.atkBuff(ctx) * 1.5 * ctx.linggen.spellMult;
     const bolt = new THREE.Mesh(
       new THREE.CylinderGeometry(0.12, 0.3, 24, 6, 1, true),
       ADD(0xd8e8ff, 0.9));
@@ -281,7 +299,7 @@ export class Skills {
             this.ultRefund = false;
             ctx.setTimeScale(1);
             ctx.shake(0.55);
-            const dmg = ctx.stats.atk * 4.5 * ctx.linggen.swordMult;
+            const dmg = ctx.stats.atk * this.atkBuff(ctx) * 4.5 * ctx.linggen.swordMult;
             damageArea(ctx, target, 12, dmg, '万剑归宗');
             ctx.bursts.spawn(new THREE.Vector3(target.x, target.y + 1, target.z), 0xffd97a, 140, 14);
             ctx.bursts.spawn(new THREE.Vector3(player.position.x, player.position.y + 1, player.position.z), 0xfff3c8, 80, 10);
@@ -332,6 +350,65 @@ export class Skills {
     return true;
   }
 
+  // ---- T 灵压阵：脚下金纹法阵，12s 领域（攻+30%、回蓝×2、敌减速40%） ----
+  castDomain(ctx) {
+    if (this.casting || this.ultActive) return false;
+    if (this.mana < 40) { ctx.hud.showBanner('真元不足', 1000); return false; }
+    if ((this.cooldowns.domain || 0) > 0) { ctx.hud.showBanner('灵压阵调息中', 1000); return false; }
+    this.mana -= 40;
+    this.cooldowns.domain = 30;
+    this.player = ctx.player;
+    const c = ctx.player.position.clone();
+    const y = ctx.terrainHeight(c.x, c.z) + 0.08;
+
+    const g = new THREE.Group();
+    // 主阵纹（双环 + 旋转符文环）
+    const ring1 = new THREE.Mesh(new THREE.RingGeometry(9.6, 10, 64), ADD(0xffd97a, 0.7));
+    ring1.rotation.x = -Math.PI / 2;
+    const ring2 = new THREE.Mesh(new THREE.RingGeometry(7.4, 7.6, 64), ADD(0xffe9a8, 0.45));
+    ring2.rotation.x = -Math.PI / 2;
+    const runeRing = new THREE.Mesh(new THREE.RingGeometry(8.0, 9.4, 64), ADD(0xffcf6a, 0.35));
+    runeRing.rotation.x = -Math.PI / 2;
+    g.add(ring1, ring2, runeRing);
+    // 内圈阵眼
+    const eye = new THREE.Mesh(new THREE.RingGeometry(0.4, 1.6, 40), ADD(0xfff3c8, 0.8));
+    eye.rotation.x = -Math.PI / 2;
+    g.add(eye);
+    // 边界光柱
+    const pillars = [];
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const pl = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.1, 4.5, 6, 1, true), ADD(0xffd97a, 0.4));
+      pl.position.set(Math.cos(a) * 10, 2.2, Math.sin(a) * 10);
+      g.add(pl);
+      pillars.push(pl);
+    }
+    g.position.set(c.x, y, c.z);
+    ctx.scene.add(g);
+    this.domain = { x: c.x, z: c.z, r: 10, group: g };
+    ctx.hud.showBanner('法域 · 灵压阵', 1600);
+
+    let t = 0;
+    this.fx.push({
+      update: (dt) => {
+        t += dt;
+        runeRing.rotation.z += dt * 0.6;
+        eye.rotation.z -= dt * 1.2;
+        const pulse = 0.55 + Math.sin(t * 4) * 0.15;
+        ring1.material.opacity = pulse;
+        for (const pl of pillars) pl.material.opacity = 0.3 + Math.sin(t * 4 + pl.position.x) * 0.12;
+        if (t > 12 || (this.player && this.inDomain(this.player.position) === false && t > 0.5)) {
+          // 离开领域或超时 → 收回法阵
+          ctx.scene.remove(g);
+          this.domain = null;
+          return false;
+        }
+        return true;
+      },
+    });
+    return true;
+  }
+
   // 地面裂纹贴花（程序化裂纹纹理）
   spawnCracks(ctx, center, n) {
     const tex = crackTexture();
@@ -357,7 +434,8 @@ export class Skills {
   }
 
   update(dt) {
-    this.mana = Math.min(this.maxMana, this.mana + this.regen * dt);
+    const manaRegen = this.regen * (this.inDomain(this.player?.position) ? 2 : 1);
+    this.mana = Math.min(this.maxMana, this.mana + manaRegen * dt);
     for (const k in this.cooldowns) {
       this.cooldowns[k] -= dt;
       if (this.cooldowns[k] <= 0) delete this.cooldowns[k];
@@ -370,11 +448,17 @@ export class Skills {
     if (this.casting) {
       this.casting.t -= dt;
       const frac = 1 - this.casting.t / this.casting.dur;
+      if (this.casting.orb) {
+        const p = this._lastCastCtx?.player?.position;
+        if (p) this.casting.orb.position.set(p.x, p.y + 1.35, p.z).add(
+          new THREE.Vector3(Math.sin(this._lastCastCtx.player.yaw || 0) * 0.5, 0, Math.cos(this._lastCastCtx.player.yaw || 0) * 0.5));
+        this.casting.orb.scale.setScalar(0.6 + frac * 1.6);
+      }
       if (this.casting.t <= 0) {
         const done = this.casting.done;
         this.casting = null;
         this._lastCastCtx?.hud.castBar(null);
-        if (this._lastCastCtx?.player) this._lastCastCtx.player.slowFactor = 1;
+        if (this._lastCastCtx?.player) { this._lastCastCtx.player.slowFactor = 1; this._lastCastCtx.player.casting = false; }
         done();
       } else {
         this._lastCastCtx?.hud.castBar(frac, this.casting.name);

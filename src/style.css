@@ -400,3 +400,42 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0a1210; }
   background: radial-gradient(ellipse at center, transparent 45%, rgba(216,150,40,0.35) 100%);
 }
 #ult-vignette.show { opacity: 1; }
+
+/* ---------- V2-2/V2-3：灵压阵精英怪 + 玄蛟 Boss ---------- */
+.beast-tag.elite .b-name { color: #ff6a5a; font-weight: 700; text-shadow: 0 0 6px rgba(255,60,40,0.6), 0 1px 3px #000; }
+.beast-tag.elite .b-hp { border: 1px solid rgba(255,90,70,0.6); }
+
+#boss-bar {
+  position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
+  width: min(560px, 60vw); text-align: center; z-index: 60;
+  pointer-events: none;
+}
+#boss-name {
+  font-family: "STKaiti","KaiTi",serif; font-size: 20px; color: #ffe9a8;
+  text-shadow: 0 0 12px rgba(255,180,60,0.7), 0 2px 4px #000; letter-spacing: 4px;
+  margin-bottom: 4px;
+}
+#boss-track {
+  height: 10px; border: 1px solid rgba(255,217,122,0.5); border-radius: 5px;
+  background: rgba(10,8,4,0.7); overflow: hidden;
+  box-shadow: 0 0 14px rgba(0,0,0,0.6), inset 0 0 8px rgba(0,0,0,0.8);
+}
+#boss-fill {
+  display: block; height: 100%; width: 100%;
+  background: linear-gradient(90deg, #7a1f14, #d8452e, #ffb37a);
+  transition: width 0.25s;
+}
+#boss-fill.enrage { background: linear-gradient(90deg, #b40d0d, #ff3d1e, #ffd97a); }
+#boss-cast {
+  margin-top: 3px; font-size: 12px; color: #8ad8ff;
+  text-shadow: 0 0 8px rgba(90,190,255,0.8), 0 1px 3px #000;
+}
+
+#kill-banner {
+  position: fixed; top: 38%; left: 50%; transform: translate(-50%,-50%) scale(0.8);
+  font-family: "STKaiti","KaiTi",serif; font-size: 64px; letter-spacing: 18px;
+  color: #ffd97a; opacity: 0; pointer-events: none; z-index: 70;
+  text-shadow: 0 0 30px rgba(255,190,80,0.9), 0 0 8px rgba(120,60,0,0.9), 0 3px 6px #000;
+  transition: opacity 0.35s, transform 0.35s;
+}
+#kill-banner.show { opacity: 1; transform: translate(-50%,-50%) scale(1); }

@@ -37,11 +37,11 @@ function rollGrade(lv) {
   return 0;
 }
 
-// 生成一件装备（lv = 掉落怪等级）
-export function genEquip(lv) {
+// 生成一件装备（lv = 掉落怪等级，minGrade = 品阶下限：精英/Boss 保底）
+export function genEquip(lv, minGrade = 0) {
   const kindKey = ['sword', 'robe', 'charm'][Math.floor(Math.random() * 3)];
   const kind = KINDS[kindKey];
-  const grade = rollGrade(lv);
+  const grade = Math.max(minGrade, rollGrade(lv));
   const g = GRADES[grade];
   const mainVal = Math.round(kind.base * (1 + lv * 0.5) * (1 + grade * 0.55) * (0.9 + Math.random() * 0.2));
   const affixes = [];
