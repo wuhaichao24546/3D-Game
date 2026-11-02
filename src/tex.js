@@ -276,6 +276,58 @@ export const flameFeatherTex = () => canvasTex(64, 256, (g, w, h) => {
   }
 }, false);
 
+// 火凤羽（写实：绯红羽身、金橙羽尖、羽轴羽枝）
+export const phoenixFeatherTex = () => canvasTex(96, 320, (g, w, h) => {
+  const gr = g.createLinearGradient(0, h, 0, 0);
+  gr.addColorStop(0, 'rgba(74,10,6,1)');      // 根 暗绯
+  gr.addColorStop(0.35, 'rgba(150,26,10,1)'); // 下 绯红
+  gr.addColorStop(0.65, 'rgba(216,70,16,1)'); // 中 橙红
+  gr.addColorStop(0.88, 'rgba(246,150,44,1)');// 上 金橙
+  gr.addColorStop(1, 'rgba(255,214,110,1)');  // 尖 鎏金
+  g.fillStyle = gr;
+  g.beginPath();
+  // 羽形：根窄、中鼓、尖收
+  g.moveTo(w / 2, h);
+  g.bezierCurveTo(w * 0.08, h * 0.78, w * 0.1, h * 0.3, w * 0.42, h * 0.06);
+  g.quadraticCurveTo(w * 0.5, 0, w * 0.58, h * 0.06);
+  g.bezierCurveTo(w * 0.9, h * 0.3, w * 0.92, h * 0.78, w / 2, h);
+  g.fill();
+  // 羽枝：细密斜纹
+  g.save();
+  g.clip();
+  for (let y = h * 0.05; y < h; y += 9) {
+    const a = 0.1 + 0.25 * (y / h);
+    g.strokeStyle = `rgba(60,8,4,${a * 0.5})`;
+    g.lineWidth = 1.4;
+    g.beginPath();
+    g.moveTo(w / 2, y); g.lineTo(w * 0.06, y + 16);
+    g.moveTo(w / 2, y); g.lineTo(w * 0.94, y + 16);
+    g.stroke();
+    g.strokeStyle = `rgba(255,200,120,${a * 0.35})`;
+    g.lineWidth = 0.8;
+    g.beginPath();
+    g.moveTo(w / 2, y + 4); g.lineTo(w * 0.14, y + 19);
+    g.moveTo(w / 2, y + 4); g.lineTo(w * 0.86, y + 19);
+    g.stroke();
+  }
+  // 羽轴：根亮渐隐
+  const shaft = g.createLinearGradient(0, h, 0, 0);
+  shaft.addColorStop(0, 'rgba(255,240,200,0.95)');
+  shaft.addColorStop(0.4, 'rgba(255,190,110,0.75)');
+  shaft.addColorStop(1, 'rgba(255,160,60,0)');
+  g.strokeStyle = shaft; g.lineWidth = 3.5;
+  g.beginPath(); g.moveTo(w / 2, h); g.lineTo(w / 2, h * 0.04); g.stroke();
+  g.restore();
+  // 羽缘深线收形
+  g.strokeStyle = 'rgba(90,14,6,0.55)'; g.lineWidth = 2.5;
+  g.beginPath();
+  g.moveTo(w / 2, h);
+  g.bezierCurveTo(w * 0.08, h * 0.78, w * 0.1, h * 0.3, w * 0.42, h * 0.06);
+  g.quadraticCurveTo(w * 0.5, 0, w * 0.58, h * 0.06);
+  g.bezierCurveTo(w * 0.9, h * 0.3, w * 0.92, h * 0.78, w / 2, h);
+  g.stroke();
+}, false);
+
 // 小火苗精灵
 export const flameTex = () => canvasTex(64, 128, (g, w, h) => {
   const gr = g.createRadialGradient(w / 2, h * 0.72, 2, w / 2, h * 0.6, h * 0.55);

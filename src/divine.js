@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import {
   scaleTex, tigerTex, runeLinesTex, deerTex, flameFeatherTex, flameTex,
-  talismanTex, runeCircleTex, mulberry,
+  talismanTex, runeCircleTex, mulberry, phoenixFeatherTex,
 } from './tex.js';
 
 export const furTex = (() => {
@@ -195,60 +195,121 @@ export function buildDragon(scene, { center = V(0, 0, 0), radius = 130, height =
   };
 }
 
-// ============ 火凤凰（烈焰羽翼，掠过灵湖） ============
+// ============ 火凤凰（写实火鸟：层叠飞羽，掠过灵湖） ============
+let _phoenixFeather;
+const phoenixFeatherT = () => (_phoenixFeather ||= phoenixFeatherTex());
+
+// 让羽片按指定方向平铺（+Y=羽向、面法线朝上），roll 绕羽轴扭转
+const _featherM4 = new THREE.Matrix4();
+const _featherUp = V(0, 1, 0);
+function placeFeather(f, attach, dir, roll = 0) {
+  const D = dir.clone().normalize();
+  const X = new THREE.Vector3().crossVectors(D, _featherUp);
+  if (X.lengthSq() < 1e-6) X.set(1, 0, 0); else X.normalize();
+  const Z = new THREE.Vector3().crossVectors(X, D);
+  _featherM4.makeBasis(X, D, Z);
+  f.quaternion.setFromRotationMatrix(_featherM4);
+  if (roll) f.rotateY(roll);
+  f.position.copy(attach);
+}
+const featherGeo = (len, w) => new THREE.PlaneGeometry(w, len).translate(0, len / 2, 0);
+
 export function buildPhoenix(scene, { center = V(0, 0, 0), radius = 60, height = 26 } = {}) {
   const root = new THREE.Group();
-  const coreMat = new THREE.MeshStandardMaterial({ color: 0xffa040, emissive: 0xff5a10, emissiveIntensity: 1.4, roughness: 0.5 });
-  const goldMat = new THREE.MeshStandardMaterial({ color: 0xffd070, emissive: 0xc07010, emissiveIntensity: 0.9, metalness: 0.6, roughness: 0.3 });
-  const body = mesh(new THREE.SphereGeometry(1, 16, 12), coreMat); body.scale.set(1.1, 1.1, 2.4);
-  const neck = new THREE.Mesh(tube([V(0, 0.3, 1.8), V(0, 1.4, 2.7), V(0, 2.4, 3.1)], 0.42, 10, 8), coreMat);
-  const headM = mesh(new THREE.SphereGeometry(0.55, 14, 10), coreMat, 0, 2.6, 3.4); headM.scale.set(0.9, 0.9, 1.2);
-  const beak = mesh(new THREE.ConeGeometry(0.18, 0.9, 6), goldMat, 0, 2.5, 4.2); beak.rotation.x = Math.PI / 2 + 0.25;
-  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xfff2a0 });
-  root.add(body, neck, headM, beak, mesh(new THREE.SphereGeometry(0.08, 6, 6), eyeMat, 0.32, 2.75, 3.75), mesh(new THREE.SphereGeometry(0.08, 6, 6), eyeMat, -0.32, 2.75, 3.75));
-  const fMat = (c, o = 0.9) => additive({ map: featherT(), color: c, opacity: o });
-  const feather = (len, w) => new THREE.PlaneGeometry(w, len).translate(0, len / 2, 0);
-  for (let k = 0; k < 5; k++) { // 冠羽
-    const c = new THREE.Mesh(feather(1.6 + k * 0.2, 0.4), fMat(0xffe080));
-    c.position.set(0, 2.9, 3.2); c.rotation.x = -0.6 - k * 0.18;
-    root.add(c);
+  // 身体：绯红羽身压低 emissive，腹部鎏金
+  const coreMat = new THREE.MeshStandardMaterial({ color: 0xc83c14, emissive: 0x8a1c06, emissiveIntensity: 0.55, roughness: 0.62 });
+  const goldMat = new THREE.MeshStandardMaterial({ color: 0xe8a03c, emissive: 0x7a4408, emissiveIntensity: 0.6, metalness: 0.35, roughness: 0.45 });
+  const body = mesh(new THREE.SphereGeometry(1, 18, 14), coreMat); body.scale.set(1.15, 1.05, 2.3);
+  const belly = mesh(new THREE.SphereGeometry(0.95, 16, 12), goldMat, 0, -0.3, 0.4); belly.scale.set(0.9, 0.75, 2.0);
+  const neck = new THREE.Mesh(tube([V(0, 0.3, 1.8), V(0, 1.3, 2.7), V(0, 2.3, 3.15)], 0.4, 10, 8), coreMat);
+  const headM = mesh(new THREE.SphereGeometry(0.5, 16, 12), coreMat, 0, 2.55, 3.4); headM.scale.set(0.85, 0.85, 1.25);
+  const beak = mesh(new THREE.ConeGeometry(0.15, 0.85, 7), goldMat, 0, 2.45, 4.15); beak.rotation.x = Math.PI / 2 + 0.28;
+  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffe890 });
+  root.add(body, belly, neck, headM, beak,
+    mesh(new THREE.SphereGeometry(0.07, 6, 6), eyeMat, 0.3, 2.68, 3.7),
+    mesh(new THREE.SphereGeometry(0.07, 6, 6), eyeMat, -0.3, 2.68, 3.7));
+
+  // 羽毛材质：实体羽形（alphaTest），仅微光 —— 不再整片发光
+  const featherMat = (color, emissive, ei) => new THREE.MeshStandardMaterial({
+    map: phoenixFeatherT(), color, alphaTest: 0.32, side: THREE.DoubleSide,
+    emissiveMap: phoenixFeatherT(), emissive, emissiveIntensity: ei,
+    roughness: 0.72, metalness: 0.12,
+  });
+  const covertMat = featherMat(0xa82a0e, 0x581004, 0.5);  // 覆羽·深绯
+  const flightMat = featherMat(0xffffff, 0x7a2808, 0.45); // 飞羽·渐金
+  const crestMat = featherMat(0xffc860, 0x8a4a08, 0.8);   // 冠羽·鎏金
+  const tailMat = featherMat(0xffd8a8, 0x9a3808, 0.6);    // 尾羽·金橙
+
+  const feather = (len, w, mat) => new THREE.Mesh(featherGeo(len, w), mat);
+
+  for (let k = 0; k < 4; k++) { // 冠羽：后掠小簇
+    const f = feather(1.1 + k * 0.3, 0.3 + k * 0.06, crestMat);
+    placeFeather(f, V(0, 2.85 + k * 0.08, 3.35), V((k - 1.5) * 0.12, 0.9 - k * 0.15, -0.55));
+    root.add(f);
   }
-  // 翅膀
+
+  // 翅膀：翼臂 + 覆羽 + 次级飞羽 + 腕部初级飞羽扇
   const wings = [];
   for (const side of [1, -1]) {
     const wing = new THREE.Group();
-    wing.position.set(side * 0.8, 0.6, 0.6);
-    for (let k = 0; k < 16; k++) {
-      const len = 5 + Math.sin((k / 15) * Math.PI) * 6 + (k > 10 ? 2 : 0);
-      const f = new THREE.Mesh(feather(len, 1.6), fMat(new THREE.Color().setHSL(0.02 + (k / 15) * 0.1, 1, 0.55), 0.85));
-      f.rotation.order = 'YXZ';
-      f.rotation.z = -side * (Math.PI / 2 - (k / 15) * 1.3 + 0.2);
-      f.rotation.y = side * 0.1;
-      f.rotation.x = -Math.PI / 2 + 0.25;
+    wing.position.set(side * 0.75, 0.7, 0.3);
+    wing.scale.x = side;
+    // 翼臂（肩→腕），覆羽贴覆其上
+    wing.add(new THREE.Mesh(tube([V(0, 0, 0.55), V(2.1, 0.22, -0.05), V(4.3, 0.08, -1.3)], 0.36, 12, 8), coreMat));
+    // 覆羽 2 排：短圆羽压住翼根
+    for (let k = 0; k < 11; k++) {
+      const u = k / 10;
+      const len = 1.1 + u * 1.0;
+      const f = feather(len, len * 0.44, covertMat);
+      placeFeather(f, V(0.45 + u * 3.5, 0.12, 0.3 - u * 1.3), V(0.22 + u * 0.3, 0.03, -1));
       wing.add(f);
-      if (k % 2 === 0) {
-        const cov = new THREE.Mesh(feather(len * 0.5, 1.2), fMat(0xffe7a0, 0.9));
-        cov.rotation.copy(f.rotation);
-        wing.add(cov);
-      }
+    }
+    for (let k = 0; k < 8; k++) {
+      const u = k / 7;
+      const len = 0.8 + u * 0.7;
+      const f = feather(len, len * 0.46, covertMat);
+      placeFeather(f, V(0.35 + u * 3.0, 0.2, 0.55 - u * 1.0), V(0.15 + u * 0.25, 0.06, -1));
+      wing.add(f);
+    }
+    // 次级飞羽：沿前臂排开、斜向后方
+    for (let k = 0; k < 7; k++) {
+      const u = k / 6;
+      const len = 2.4 + u * 1.5;
+      const f = feather(len, len * 0.2, flightMat);
+      placeFeather(f, V(1.7 + u * 2.5, 0.05, -0.3 - u * 1.1), V(0.24 + u * 0.34, 0, -1));
+      wing.add(f);
+    }
+    // 初级飞羽：腕部扇形分开、逐根外张
+    for (let k = 0; k < 6; k++) {
+      const u = k / 5;
+      const len = 3.4 + u * 2.4;
+      const f = feather(len, len * 0.16, flightMat);
+      placeFeather(f, V(4.2 + u * 1.0, 0, -1.25 - u * 0.6), V(0.42 + u * 0.55, -0.02, -1), (u - 0.5) * 0.35);
+      wing.add(f);
     }
     root.add(wing);
     wings.push({ wing, side });
   }
-  // 长尾焰羽
+
+  // 尾羽：7 根流线金翎，轻扇开
   const tails = [];
-  for (let k = 0; k < 9; k++) {
-    const len = 14 + Math.random() * 12;
-    const f = new THREE.Mesh(feather(len, 1.8), fMat(new THREE.Color().setHSL(0.03 + Math.random() * 0.07, 1, 0.55), 0.8));
-    f.position.set(0, 0, -2);
-    f.rotation.order = 'YXZ';
-    f.userData = { ry: (k - 4) * 0.12, ph: Math.random() * 6 };
+  for (let k = 0; k < 7; k++) {
+    const u = (k - 3) / 3; // -1..1
+    const len = 8.5 - Math.abs(u) * 3.2;
+    const f = feather(len, len * 0.15, tailMat);
+    f.userData = {
+      pos: V(u * 0.4, 0.15, -1.7),
+      dir: V(u * 0.38, 0.2 + Math.abs(u) * 0.04, -1),
+      ph: Math.random() * 6,
+    };
+    placeFeather(f, f.userData.pos, f.userData.dir);
     root.add(f);
     tails.push(f);
   }
-  const light = new THREE.PointLight(0xff8a30, 6, 70, 1);
+
+  const light = new THREE.PointLight(0xff8a30, 4.5, 60, 1);
   root.add(light);
-  root.scale.setScalar(1.2);
+  root.scale.setScalar(1.25);
   scene.add(root);
 
   // 余烬粒子
@@ -279,10 +340,13 @@ export function buildPhoenix(scene, { center = V(0, 0, 0), radius = 60, height =
       for (const { wing, side } of wings) wing.rotation.z = side * flap * 0.55;
       root.position.y += -flap * 0.4;
       for (const f of tails) {
-        f.rotation.x = -Math.PI / 2 - 0.1 + Math.sin(t * 1.6 + f.userData.ph) * 0.12;
-        f.rotation.y = f.userData.ry + Math.sin(t * 1.2 + f.userData.ph) * 0.06;
+        const d = f.userData;
+        placeFeather(f, d.pos, V(
+          d.dir.x + Math.sin(t * 1.2 + d.ph) * 0.07,
+          d.dir.y + Math.sin(t * 1.6 + d.ph) * 0.1,
+          d.dir.z));
       }
-      light.intensity = 5 + Math.sin(t * 9) * 1.2;
+      light.intensity = 4.2 + Math.sin(t * 9) * 1.0;
       for (let k = 0; k < 4; k++) {
         const i = ei; ei = (ei + 1) % EM;
         tmp.set((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 2, -Math.random() * 18);
