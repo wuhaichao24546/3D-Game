@@ -4,12 +4,38 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>云游修仙 · 3D 修仙游戏</title>
-  <script type="module" crossorigin src="./assets/index-BkMujKYl.js"></script>
+  <script type="module" crossorigin src="./assets/index-CuCjK4iQ.js"></script>
   <link rel="modulepreload" crossorigin href="./assets/three-A-jEX28a.js">
-  <link rel="stylesheet" crossorigin href="./assets/index-DJu8p_yG.css">
+  <link rel="stylesheet" crossorigin href="./assets/index-D3DIfyqC.css">
 </head>
 <body>
   <div id="app"></div>
+
+  <!-- 登录页（参考图：问道长生） -->
+  <div id="login-screen">
+    <div class="login-back">‹</div>
+    <div class="login-enter">进入游戏</div>
+    <div class="login-title">问道长生</div>
+    <form id="login-form" autocomplete="off">
+      <input id="login-user" type="text" placeholder="道号" />
+      <input id="login-pass" type="password" placeholder="密令" />
+      <button type="submit" id="login-btn">踏上仙途</button>
+      <div id="login-err"></div>
+    </form>
+    <div class="login-charm left">符</div>
+    <div class="login-charm mid">符</div>
+    <div class="login-charm right">符</div>
+  </div>
+
+  <!-- 加载页（参考图：正在进入修仙大世界） -->
+  <div id="loading-screen">
+    <div class="loading-title">正在进入修仙大世界</div>
+    <div class="loading-progress-wrap">
+      <div id="loading-pct">0%</div>
+      <div class="loading-bar"><div id="loading-bar-fill"></div></div>
+      <div id="loading-tip">加载灵脉数据与地形资源…</div>
+    </div>
+  </div>
 
   <div id="hud">
     <div id="status-panel">
