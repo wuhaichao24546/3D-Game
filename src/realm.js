@@ -75,7 +75,18 @@ export function buildRealm(scene, ctx) {
   const soil = new THREE.MeshStandardMaterial({ color: 0x3e2c1e, roughness: 1 });
   const crop = new THREE.MeshStandardMaterial({ color: 0x4f8f3c, roughness: 0.9 });
   const dark = new THREE.MeshBasicMaterial({ color: 0x0b0806 });
-  const bark = new THREE.MeshStandardMaterial({ map: barkTex, color: 0x9a8a78, roughness: 1 });
+  const barkPbr = (n, srgb) => {
+    const t = new THREE.TextureLoader().load(`textures/trees/bark_willow_${n}.jpg`);
+    if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(3, 1);
+    return t;
+  };
+  const bark = new THREE.MeshStandardMaterial({
+    map: barkPbr('color', true), normalMap: barkPbr('normal', false), roughnessMap: barkPbr('roughness', false),
+    color: 0xb0a090, roughness: 1,
+  });
+  bark.normalScale.set(1.5, 1.5);
   const bamboo = new THREE.MeshStandardMaterial({ color: 0x8aa858, roughness: 0.7 });
   const brass = new THREE.MeshStandardMaterial({ color: 0xc89a48, metalness: 0.8, roughness: 0.35 });
   const lampMat = new THREE.MeshStandardMaterial({ color: 0xffe0a0, emissive: 0xffb050, emissiveIntensity: 0.3 });
@@ -159,8 +170,7 @@ export function buildRealm(scene, ctx) {
 
   // ---------- 垂柳 ----------
   const wTex = willowTex();
-  const willowMat = new THREE.MeshStandardMaterial({ map: wTex, alphaTest: 0.35, side: THREE.DoubleSide, roughness: 0.9 });
-  const willowMass = new THREE.MeshStandardMaterial({ color: 0x5e8a30, roughness: 1 });
+  const willowMat = new THREE.MeshStandardMaterial({ map: wTex, color: 0x9fb07a, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.85 });
   const willows = [];
   function willow(x, z, sc = 1) {
     const g = new THREE.Group();
@@ -169,13 +179,13 @@ export function buildRealm(scene, ctx) {
     for (const [bx, bz] of [[2.2, 0.5], [-2, 0.8], [0.4, -2.2], [-0.8, 2]]) {
       g.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([V(0.2, 5.4, 0.1), V(bx * 0.5, 6.8, bz * 0.5), V(bx, 7.6, bz)]), 8, 0.2, 6), bark));
     }
-    const mass = mesh(new THREE.SphereGeometry(3.4, 12, 9), willowMass, 0, 7.4, 0); mass.scale.set(1, 0.55, 1);
-    g.add(mass);
+    // 垂丝层层下垂（不再用球形树冠）
     const strands = new THREE.Group();
-    for (let k = 0; k < 46; k++) {
-      const a = (k / 46) * Math.PI * 2 + rng() * 0.3, r = 1.2 + rng() * 2.8;
-      const len = 4 + rng() * 3.5;
-      const p = mesh(new THREE.PlaneGeometry(2.2, len).translate(0, -len / 2, 0), willowMat, Math.cos(a) * r, 8 - rng() * 0.6, Math.sin(a) * r);
+    const NS = 110;
+    for (let k = 0; k < NS; k++) {
+      const a = (k / NS) * Math.PI * 6 + rng() * 0.5, r = 0.6 + Math.pow(rng(), 0.7) * 3.6;
+      const len = 3 + rng() * 4.5 - r * 0.3;
+      const p = mesh(new THREE.PlaneGeometry(1.1 + rng() * 0.8, len).translate(0, -len / 2, 0), willowMat, Math.cos(a) * r, 8.4 - r * 0.25 - rng() * 0.5, Math.sin(a) * r);
       p.rotation.y = -a + Math.PI / 2 + (rng() - 0.5) * 0.6;
       strands.add(p);
     }

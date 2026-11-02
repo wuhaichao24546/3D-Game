@@ -136,10 +136,22 @@ export class Player {
     this.animT = 0;
 
     // 汉服配饰
-    const robeTex = new THREE.TextureLoader().load('textures/robe.jpg');
-    robeTex.colorSpace = THREE.SRGBColorSpace;
-    robeTex.wrapS = robeTex.wrapT = THREE.RepeatWrapping;
-    const robeMat = new THREE.MeshStandardMaterial({ map: robeTex, color: 0x2e4d5e, roughness: 0.75, side: THREE.DoubleSide });
+    // 道袍：扫描亚麻织物 PBR（颜色/法线/粗糙度）+ 织物光泽 sheen
+    const tl = new THREE.TextureLoader();
+    const cloth = (n, srgb) => {
+      const t = tl.load(`textures/cloth/linen_${n}.jpg`);
+      if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.repeat.set(3, 3);
+      t.anisotropy = 8;
+      return t;
+    };
+    const robeMat = new THREE.MeshPhysicalMaterial({
+      map: cloth('diff', true), normalMap: cloth('nor', false), roughnessMap: cloth('rough', false),
+      color: 0x3a6070, roughness: 1, metalness: 0, side: THREE.DoubleSide,
+      sheen: 0.8, sheenRoughness: 0.75, sheenColor: new THREE.Color(0x9cc4c8),
+    });
+    robeMat.normalScale.set(1.2, 1.2);
     const acc = buildAccessories(robeMat);
     this.inner.add(acc.group);
     this.swordMesh = acc.sword;

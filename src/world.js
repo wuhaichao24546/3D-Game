@@ -4,6 +4,7 @@ import { Sky } from 'three/addons/objects/Sky.js';
 import { Water } from 'three/addons/objects/Water.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildRealm } from './realm.js';
+import { Forest, buildGrass, foliageUniforms } from './foliage.js';
 
 // ---- seeded rng + noise --------------------------------------------------
 function mulberry32(seed) {
@@ -110,6 +111,7 @@ export function buildWorld(scene, renderer) {
   sun.shadow.bias = -0.00035;
   sun.shadow.normalBias = 1.2;
   scene.add(sun, sun.target);
+  const focus = new THREE.Vector3();
   const hemi = new THREE.HemisphereLight(0xbfe6ff, 0x2e4d3a, 1.0);
   scene.add(hemi);
   const amb = new THREE.AmbientLight(0xffffff, 0.16);
@@ -174,13 +176,24 @@ export function buildWorld(scene, renderer) {
   const sandTex = loadTex('textures/sand.jpg');
   grassTex.repeat.set(1, 1);
 
-  const terrainMat = new THREE.MeshStandardMaterial({
-    map: grassTex, roughness: 1, metalness: 0,
+  // 写实地表：Poly Haven 扫描 PBR（草地/林地泥土/沙滩/岩壁），按坡度/高度/噪声混合，带法线与粗糙度
+  const maxAniso = renderer.capabilities.getMaxAnisotropy();
+  const groundTex = (n, srgb = true) => {
+    const t = loadTex(`textures/ground/${n}.jpg`);
+    if (!srgb) t.colorSpace = THREE.NoColorSpace;
+    t.anisotropy = maxAniso;
+    return t;
+  };
+  const tU = {};
+  ['leafy_grass', 'forrest_ground_01', 'coast_sand_01', 'rock_face'].forEach((n, i) => {
+    tU['tD' + i] = { value: groundTex(n + '_diff') };
+    tU['tN' + i] = { value: groundTex(n + '_nor', false) };
   });
+  tU.tR0 = { value: groundTex('leafy_grass_rough', false) };
+  tU.tR3 = { value: groundTex('rock_face_rough', false) };
+  const terrainMat = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0 });
   terrainMat.onBeforeCompile = (shader) => {
-    shader.uniforms.tRock = { value: rockTex };
-    shader.uniforms.tDirt = { value: dirtTex };
-    shader.uniforms.tSand = { value: sandTex };
+    Object.assign(shader.uniforms, tU);
     shader.uniforms.uWater = { value: WATER_LEVEL };
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nvarying vec3 vWNormal;')
@@ -191,29 +204,82 @@ export function buildWorld(scene, renderer) {
       .replace('#include <common>', `#include <common>
         varying vec3 vWPos;
         varying vec3 vWNormal;
-        uniform sampler2D tRock;
-        uniform sampler2D tDirt;
-        uniform sampler2D tSand;
-        uniform float uWater;`)
+        uniform sampler2D tD0, tD1, tD2, tD3, tN0, tN1, tN2, tN3, tR0, tR3;
+        uniform float uWater;
+        vec3 tnrm(sampler2D t, vec2 uv) { return texture2D(t, uv).xyz * 2.0 - 1.0; }
+        float th12(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float tvn(vec2 p) {
+          vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(th12(i), th12(i + vec2(1, 0)), f.x), mix(th12(i + vec2(0, 1)), th12(i + vec2(1, 1)), f.x), f.y);
+        }`)
       .replace('#include <map_fragment>', `
-        vec2 tuv = vWPos.xz * 0.12;
-        vec3 cGrass = texture2D(map, tuv).rgb;
-        vec3 cRock = texture2D(tRock, tuv * 0.6).rgb;
-        vec3 cSand = texture2D(tSand, tuv * 1.8).rgb;
-        vec3 cDirt = texture2D(tDirt, tuv * 1.3).rgb;
+        vec2 wuv = vWPos.xz;
+        float nz = tvn(wuv * 0.045) * 0.6 + tvn(wuv * 0.14) * 0.4;
+        vec2 uvG = wuv * 0.22;
+        vec2 uvG2 = mat2(0.8, -0.6, 0.6, 0.8) * wuv * 0.063;
+        vec2 uvD = wuv * 0.19;
+        vec2 uvS = wuv * 0.24;
+        vec2 uvR = wuv * 0.085;
+        vec3 an = abs(normalize(vWNormal));
+        vec2 uvRs = (an.x > an.z ? vWPos.zy : vWPos.xy) * 0.085;
+        float sideW = smoothstep(0.5, 0.8, 1.0 - an.y);
+        vec3 cG = mix(texture2D(tD0, uvG).rgb, texture2D(tD0, uvG2).rgb, 0.4);
+        vec3 cD = texture2D(tD1, uvD).rgb;
+        vec3 cS = texture2D(tD2, uvS).rgb;
+        vec3 cR = mix(texture2D(tD3, uvR).rgb, texture2D(tD3, uvRs).rgb, sideW);
+        cR = mix(cR, vec3(dot(cR, vec3(0.33))) * vec3(0.95, 0.98, 1.04), 0.55);
         float slope = 1.0 - vWNormal.y;
-        float rockW = smoothstep(0.32, 0.6, slope + smoothstep(14.0, 30.0, vWPos.y) * 0.5);
-        float sandW = smoothstep(uWater + 1.1, uWater + 0.15, vWPos.y);
-        float dirtW = smoothstep(0.10, 0.3, slope) * (1.0 - rockW) * 0.6;
-        vec3 terr = mix(mix(mix(cGrass, cDirt, dirtW), cSand, sandW), cRock, rockW);
-        // 大尺度明暗变化，打破贴图重复感
-        float macro = 0.9 + 0.2 * sin(vWPos.x * 0.013 + vWPos.z * 0.017) * sin(vWPos.x * 0.007 - vWPos.z * 0.011);
-        diffuseColor.rgb = terr * macro * 1.05;
-      `);
+        float w3 = smoothstep(0.30, 0.55, slope + smoothstep(14.0, 30.0, vWPos.y) * 0.45 + (nz - 0.5) * 0.12);
+        float sandW = smoothstep(uWater + 1.2, uWater + 0.2, vWPos.y + (nz - 0.5) * 0.6);
+        float w2 = sandW * (1.0 - w3);
+        float rest = (1.0 - sandW) * (1.0 - w3);
+        float dd = clamp(smoothstep(0.10, 0.28, slope) * 0.7 + smoothstep(0.66, 0.86, nz) * 0.55, 0.0, 1.0);
+        float w1 = dd * rest;
+        float w0 = (1.0 - dd) * rest;
+        vec3 terr = cG * w0 + cD * w1 + cS * w2 + cR * w3;
+        terr *= mix(0.84, 1.1, nz);
+        terr = mix(terr, terr * vec3(1.08, 1.0, 0.8), smoothstep(0.45, 0.8, tvn(wuv * 0.02)) * w0 * 0.45);
+        diffuseColor.rgb = terr;
+        float tRough = texture2D(tR0, uvG).r * w0 + 0.95 * w1 + 0.88 * w2 + texture2D(tR3, uvR).r * w3;
+        vec3 tN = tnrm(tN0, uvG) * w0 + tnrm(tN1, uvD) * w1 + tnrm(tN2, uvS) * w2 + mix(tnrm(tN3, uvR), tnrm(tN3, uvRs), sideW) * w3;
+      `)
+      .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = clamp(tRough, 0.45, 1.0);')
+      .replace('#include <normal_fragment_maps>', `{
+          vec3 Nw = normalize(vWNormal);
+          vec3 Tw = normalize(vec3(1.0, 0.0, 0.0) - Nw * Nw.x);
+          vec3 Bw = cross(Tw, Nw);
+          vec3 pn = normalize(vec3(tN.xy * 1.25, max(tN.z, 0.2)));
+          normal = normalize((viewMatrix * vec4(Tw * pn.x + Bw * pn.y + Nw * pn.z, 0.0)).xyz);
+        }`);
   };
   const terrain = new THREE.Mesh(geo, terrainMat);
   terrain.receiveShadow = true;
+  terrain.userData.noShadowCast = true;
   scene.add(terrain);
+
+  // 地形高度/草密度烘焙贴图（与地形网格顶点一一对应），驱动 GPU 密草场
+  const HN = SEG + 1;
+  const hData = new Uint16Array(HN * HN * 4);
+  const nrm = geo.attributes.normal;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), z = pos.getZ(i), y = pos.getY(i);
+    const ix = Math.round((x + SIZE / 2) / SIZE * SEG), iz = Math.round((z + SIZE / 2) / SIZE * SEG);
+    const ok = y > WATER_LEVEL + 0.55 && y < 16 && nrm.getY(i) > 0.82 && !inSite(x, z, 1.05);
+    const o = (iz * HN + ix) * 4;
+    hData[o] = THREE.DataUtils.toHalfFloat(y);
+    hData[o + 1] = THREE.DataUtils.toHalfFloat(ok ? 1 : 0);
+    hData[o + 3] = THREE.DataUtils.toHalfFloat(1);
+  }
+  const heightTex = new THREE.DataTexture(hData, HN, HN, THREE.RGBAFormat, THREE.HalfFloatType);
+  heightTex.magFilter = heightTex.minFilter = THREE.LinearFilter;
+  heightTex.needsUpdate = true;
+  const cell = SIZE / SEG;
+  const grass = buildGrass(scene, {
+    heightTex,
+    mapMin: new THREE.Vector2(-SIZE / 2 - cell / 2, -SIZE / 2 - cell / 2),
+    mapSize: new THREE.Vector2(cell * HN, cell * HN),
+  });
+  updaters.push(() => grass.update(focus));
 
   // ---------- water（真实反射水面） ----------
   const waterNormals = loadTex('textures/waternormals.jpg');
@@ -236,42 +302,48 @@ export function buildWorld(scene, renderer) {
   // ---------- trees ----------
   const barkTex = loadTex('textures/bark.jpg');
   const rng = mulberry32(2024);
-  const trunkGeo = new THREE.CylinderGeometry(0.16, 0.3, 3.2, 7);
-  const trunkMat = new THREE.MeshStandardMaterial({ map: barkTex, roughness: 1 });
-  // canopy: 三段锥体叠成的松树冠
-  const canopyGeo = mergeGeometries([
-    new THREE.ConeGeometry(1.9, 2.6, 8).translate(0, 3.4, 0),
-    new THREE.ConeGeometry(1.45, 2.2, 8).translate(0, 4.9, 0),
-    new THREE.ConeGeometry(0.95, 1.7, 8).translate(0, 6.2, 0),
-  ]);
-  const canopyMat = new THREE.MeshStandardMaterial({ color: 0x35714a, roughness: 1 });
-  const MAX_TREES = 380;
-  const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, MAX_TREES);
-  const canopies = new THREE.InstancedMesh(canopyGeo, canopyMat, MAX_TREES);
+  // 写实大树：程序化分枝（树皮 PBR + 叶片贴图 + 风动），近处高模、远处低模
+  const forest = new Forest(scene, { nearDist: 60 });
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3();
   const cTint = new THREE.Color();
+  const MAX_TREES = 300;
   let ti = 0;
   for (let i = 0; i < 3200 && ti < MAX_TREES; i++) {
     const x = (rng() * 2 - 1) * (WORLD_RADIUS - 15);
     const z = (rng() * 2 - 1) * (WORLD_RADIUS - 15);
     const h = terrainHeight(x, z);
-    if (h < WATER_LEVEL + 0.8 || h > 17 || inSite(x, z, 1.5)) continue;
-    const sc = 0.7 + rng() * 1.5;
-    q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rng() * Math.PI * 2);
-    s.setScalar(sc);
-    m.compose(new THREE.Vector3(x, h + 1.5 * sc, z), q, s);
-    trunks.setMatrixAt(ti, m);
-    m.compose(new THREE.Vector3(x, h, z), q, s);
-    canopies.setMatrixAt(ti, m);
-    canopies.setColorAt(ti, cTint.setHSL(0.34 + rng() * 0.05, 0.45, 0.34 + rng() * 0.14));
+    if (h < WATER_LEVEL + 0.8 || h > 19 || inSite(x, z, 1.5)) continue;
+    const r = rng();
+    const kind = h > 11 ? (r < 0.75 ? 'pine' : 'ash') : (r < 0.3 ? 'pine' : r < 0.65 ? 'oak' : 'ash');
+    forest.add(kind, x, h, z, rng);
     ti++;
   }
-  trunks.count = canopies.count = ti;
-  scene.add(trunks, canopies);
 
   // ---------- rocks ----------
-  const rockGeo = new THREE.IcosahedronGeometry(1, 1);
-  const rockMat = new THREE.MeshStandardMaterial({ map: rockTex, roughness: 1 });
+  // 写实岩块：高细分 + 多频噪声位移（不规则棱角）+ 岩壁扫描 PBR
+  const rockGeo = new THREE.IcosahedronGeometry(1, 4);
+  {
+    const rp = rockGeo.attributes.position, v = new THREE.Vector3();
+    const rn = (x, y, z) => Math.sin(x * 1.7 + y * 2.3) * Math.cos(z * 1.9 - x * 1.1) * 0.5 + Math.sin(x * 4.1 - z * 3.7 + y * 2.9) * 0.18 + Math.sin(y * 7.3 + z * 6.1) * 0.06;
+    for (let i = 0; i < rp.count; i++) {
+      v.fromBufferAttribute(rp, i);
+      const d = 1 + rn(v.x, v.y, v.z) * 0.35;
+      v.multiplyScalar(d);
+      if (v.y < -0.2) v.y = -0.2 + (v.y + 0.2) * 0.3;
+      rp.setXYZ(i, v.x, v.y, v.z);
+    }
+    rockGeo.computeVertexNormals();
+  }
+  const rTex = (n, srgb) => {
+    const t = loadTex(`textures/ground/rock_face_${n}.jpg`);
+    if (!srgb) t.colorSpace = THREE.NoColorSpace;
+    t.repeat.set(2, 1);
+    return t;
+  };
+  const rockMat = new THREE.MeshStandardMaterial({
+    map: rTex('diff', true), normalMap: rTex('nor', false), roughnessMap: rTex('rough', false),
+    color: 0xb4b4ac, roughness: 1,
+  });
   const rocks = new THREE.InstancedMesh(rockGeo, rockMat, 200);
   let ri = 0;
   for (let i = 0; i < 900 && ri < 200; i++) {
@@ -280,8 +352,8 @@ export function buildWorld(scene, renderer) {
     const h = terrainHeight(x, z);
     if (h < WATER_LEVEL || inSite(x, z, 1.3)) continue;
     s.set(0.5 + rng() * 1.8, 0.4 + rng() * 1.2, 0.5 + rng() * 1.8);
-    q.setFromEuler(new THREE.Euler(rng() * 3, rng() * 3, rng() * 3));
-    m.compose(new THREE.Vector3(x, h + 0.1, z), q, s);
+    q.setFromEuler(new THREE.Euler((rng() - 0.5) * 0.5, rng() * 6.3, (rng() - 0.5) * 0.5));
+    m.compose(new THREE.Vector3(x, h - 0.1, z), q, s);
     rocks.setMatrixAt(ri++, m);
   }
   rocks.count = ri;
@@ -313,7 +385,7 @@ export function buildWorld(scene, renderer) {
   const tuftMat = new THREE.MeshStandardMaterial({
     map: bladeTex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 1,
   });
-  const TUFTS = 2500;
+  const TUFTS = 0; // 旧十字面草丛已由 GPU 密草场替代
   const tufts = new THREE.InstancedMesh(tuftGeo, tuftMat, TUFTS);
   let gi = 0;
   for (let i = 0; i < 12000 && gi < TUFTS; i++) {
@@ -329,7 +401,6 @@ export function buildWorld(scene, renderer) {
     gi++;
   }
   tufts.count = gi;
-  scene.add(tufts);
 
   // ---------- 青竹幽谷（西南区竹林） ----------
   const bambooStalk = new THREE.CylinderGeometry(0.05, 0.07, 7.5, 5);
@@ -457,11 +528,7 @@ export function buildWorld(scene, renderer) {
   scene.add(herbs);
 
   // ---------- 粉紫花树（灵桃/樱花点缀水岸） ----------
-  const blossomMat = new THREE.MeshStandardMaterial({ color: 0xe8a8c8, roughness: 1 });
-  const BLOSSOM = 90;
-  const btrunks = new THREE.InstancedMesh(trunkGeo, trunkMat, BLOSSOM);
-  const bcanopies = new THREE.InstancedMesh(
-    new THREE.SphereGeometry(1.9, 8, 6).translate(0, 4.6, 0), blossomMat, BLOSSOM);
+  const BLOSSOM = 70;
   let bli = 0;
   for (let i = 0; i < 4000 && bli < BLOSSOM; i++) {
     const x = (rng() * 2 - 1) * (WORLD_RADIUS - 15);
@@ -470,18 +537,11 @@ export function buildWorld(scene, renderer) {
     if (rd > 30 || rd < 9) continue;
     const h = terrainHeight(x, z);
     if (h < WATER_LEVEL + 0.4 || h > 13 || inSite(x, z, 1.35)) continue;
-    const sc = 0.6 + rng() * 0.9;
-    q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rng() * Math.PI * 2);
-    s.setScalar(sc);
-    m.compose(new THREE.Vector3(x, h + 1.5 * sc, z), q, s);
-    btrunks.setMatrixAt(bli, m);
-    m.compose(new THREE.Vector3(x, h, z), q, s);
-    bcanopies.setMatrixAt(bli, m);
-    bcanopies.setColorAt(bli, cTint.setHSL(0.85 + rng() * 0.12, 0.55, 0.6 + rng() * 0.15));
+    forest.add('blossom', x, h, z, rng);
     bli++;
   }
-  btrunks.count = bcanopies.count = bli;
-  scene.add(btrunks, bcanopies);
+  forest.finalize();
+  updaters.push(() => forest.update(focus));
 
   // ---------- 苔石（河岸苔藓覆盖的圆石） ----------
   const mossMat = new THREE.MeshStandardMaterial({ map: rockTex, color: 0x7fa87a, roughness: 1 });
@@ -632,9 +692,8 @@ export function buildWorld(scene, renderer) {
     bottom.rotation.x = Math.PI;
     bottom.position.y = -(1.5 + def.r * 1.1);
     g.add(top, bottom);
-    const t = new THREE.Mesh(canopyGeo, canopyMat);
-    t.position.set(def.r * 0.35, 1.5, def.r * 0.25);
-    t.scale.setScalar(0.6);
+    const t = forest.single(def.r > 11 ? 'pine' : 'blossom', def.r * 0.75);
+    t.position.set(def.r * 0.35, 1.4, def.r * 0.25);
     g.add(t);
     g.add(buildPavilion(Math.min(4, def.r * 0.4)).translateX(-def.r * 0.3).translateZ(-def.r * 0.2).translateY(1.5));
     g.position.set(def.x, def.y, def.z);
@@ -891,7 +950,7 @@ export function buildWorld(scene, renderer) {
     renderer.toneMappingExposure = 0.62 + day * 0.55;
     cloudMat.color.setScalar(0.25 + day * 0.75);
     // 谷地浓雾（参考图的水面雾层）：白天浓、夜里淡
-    mistMat.opacity = 0.08 + day * 0.34;
+    mistMat.opacity = 0.06 + day * 0.2;
     // 灵蝶白天飞舞（夜里收拢变暗）
     for (const b of flySprites) b.material.opacity = 0.15 + day * 0.6;
 
@@ -921,8 +980,12 @@ export function buildWorld(scene, renderer) {
     return { dayTime, night, day, dusk, sunAlt };
   }
 
+  forest.update(focus, true);
+
   return {
     terrainHeight,
+    forest,
+    setFocus(v) { focus.copy(v); },
     landmarks: realm.landmarks,
     dragon: realm.dragon,
     phoenix: realm.phoenix,
@@ -936,6 +999,7 @@ export function buildWorld(scene, renderer) {
       }
     },
     update(dt, t) {
+      foliageUniforms.uTime.value = t;
       for (const f of updaters) f(dt, t);
       return updateDayNight(dt);
     },
@@ -949,7 +1013,7 @@ export function applyShadowFlags(root) {
     const mats = Array.isArray(o.material) ? o.material : [o.material];
     const lit = mats.some((m) => m && (m.isMeshStandardMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial));
     const glow = mats.some((m) => m && (m.transparent || m.blending === THREE.AdditiveBlending));
-    o.castShadow = lit && !glow;
+    o.castShadow = lit && !glow && !o.userData.noShadowCast;
     if (lit) o.receiveShadow = true;
   });
 }

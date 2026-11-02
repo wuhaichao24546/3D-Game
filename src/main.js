@@ -129,7 +129,7 @@ async function start() {
     beasts = b;
     if (window.__game) window.__game.beasts = b;
   });
-  window.__game = { scene, camera, player, beasts: null, world, THREE };
+  window.__game = { scene, camera, player, beasts: null, world, THREE, renderer };
   window.__setCam = (y, p) => { camYaw = y; if (p !== undefined) camPitch = p; };
 
   // ---------- 画质档：高(2x+2048阴影+泛光) 中(1.5x+1024阴影) 低(1x无阴影) ----------
@@ -393,6 +393,7 @@ async function start() {
     const dt = Math.min(clock.getDelta(), 0.05);
     const t = clock.elapsedTime;
 
+    world.setFocus(player.position);
     const dayNight = world.update(dt, t);
     world.setShadowAnchor(player.position);
     // 帧率监控：连续 6 秒低于 40fps 自动降一档
