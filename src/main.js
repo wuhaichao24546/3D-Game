@@ -22,15 +22,40 @@ const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 40
 const hud = new HUD();
 const loadingEl = document.getElementById('loading');
 // 加载进度
-let progDone = 0, progTotal = 0;
+// 加载页进度
+const loadScr = document.getElementById('loading-screen');
+const loadFill = document.getElementById('loading-bar-fill');
+const loadPct = document.getElementById('loading-pct');
+function setLoadPct(p) {
+  loadFill.style.width = p + '%';
+  loadPct.textContent = Math.round(p) + '%';
+}
 DefaultLoadingManager.onProgress = (_u, done, total) => {
-  progDone = done; progTotal = total;
-  loadingEl.textContent = `仙气汇聚中 · ${Math.round(done / Math.max(total, 1) * 100)}%`;
+  setLoadPct(Math.min(95, done / Math.max(total, 1) * 100));
 };
+
+// 登录页：提交后才进入加载
+const loginScr = document.getElementById('login-screen');
+let loginResolve;
+const loginDone = new Promise((r) => { loginResolve = r; });
+function doLogin() {
+  loginScr.classList.add('hidden');
+  setLoadPct(2);
+  loginResolve();
+}
+document.getElementById('login-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const u = document.getElementById('login-user').value.trim();
+  const p = document.getElementById('login-pass').value.trim();
+  const err = document.getElementById('login-err');
+  if (!u || !p) { err.textContent = '请输入道号与密令'; return; }
+  doLogin();
+});
+document.querySelector('.login-enter').addEventListener('click', doLogin);
 
 async function start() {
   const world = buildWorld(scene, renderer);
-
+  await loginDone; // 等用户登录（世界已在后台渲染）
   let spawn = new THREE.Vector3(0, 10, 8);
   for (let r = 6; r < 60 && spawn.y <= WATER_LEVEL + 0.8; r += 4) {
     for (let a = 0; a < Math.PI * 2; a += 0.6) {
@@ -41,8 +66,10 @@ async function start() {
   }
 
   // 分层加载：世界先渲染，主角就绪即开玩，灵兽后台加载
-  loadingEl.textContent = '仙气汇聚中 · 载入修士…';
+  document.getElementById('loading-tip').textContent = '凝聚修士元神…';
   const player = await Player.create(scene, terrainHeight, spawn);
+  setLoadPct(100);
+  loadScr.classList.add('hidden');
   loadingEl.style.display = 'none';
 
   let beasts = null;
