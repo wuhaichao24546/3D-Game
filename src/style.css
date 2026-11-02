@@ -66,6 +66,26 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0a1210; }
   color: #9fe8ff;
 }
 
+#time-of-day {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #ffe8b0;
+  letter-spacing: 1px;
+}
+
+#loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 18, 16, 0.9);
+  font-size: 20px;
+  letter-spacing: 4px;
+  color: #aef0c8;
+  z-index: 10;
+}
+
 #controls-hint {
   position: absolute;
   bottom: 14px;

@@ -1,133 +1,216 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const WALK = 6, RUN = 11, FLY_SPEED = 20;
 const GRAVITY = 26, JUMP_V = 9.5;
+const loader = new GLTFLoader();
 
-function buildCultivator() {
-  const g = new THREE.Group();
-  const robe = new THREE.MeshStandardMaterial({ color: 0x2e6f5e, flatShading: true });
-  const skin = new THREE.MeshStandardMaterial({ color: 0xf2c9a0, flatShading: true });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x1a1a20, flatShading: true });
-  const trim = new THREE.MeshStandardMaterial({ color: 0xd8c17c, flatShading: true, emissive: 0x332a10 });
-
-  // body robe
-  const body = new THREE.Mesh(new THREE.ConeGeometry(0.55, 1.7, 8), robe);
-  body.position.y = 1.05;
-  g.add(body);
-  const chest = new THREE.Mesh(new THREE.CapsuleGeometry(0.32, 0.35, 3, 8), robe);
-  chest.position.y = 1.75;
-  g.add(chest);
-  const belt = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.06, 6, 12), trim);
-  belt.rotation.x = Math.PI / 2;
-  belt.position.y = 1.35;
-  g.add(belt);
-
-  // head
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 8), skin);
-  head.position.y = 2.35;
-  g.add(head);
-  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.27, 10, 8), dark);
-  hair.scale.set(1, 0.75, 1);
-  hair.position.y = 2.48;
-  g.add(hair);
-  const bun = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), dark);
-  bun.position.y = 2.75;
-  g.add(bun);
-
-  // arms
-  const armGeo = new THREE.CapsuleGeometry(0.09, 0.55, 3, 6);
-  const armL = new THREE.Mesh(armGeo, robe);
-  armL.position.set(-0.44, 1.72, 0); armL.rotation.z = 0.18;
-  const armR = new THREE.Mesh(armGeo, robe);
-  armR.position.set(0.44, 1.72, 0); armR.rotation.z = -0.18;
-  g.add(armL, armR);
-
-  // legs
-  const legGeo = new THREE.CapsuleGeometry(0.11, 0.6, 3, 6);
-  const legL = new THREE.Mesh(legGeo, dark);
-  legL.position.set(-0.18, 0.45, 0);
-  const legR = new THREE.Mesh(legGeo, dark);
-  legR.position.set(0.18, 0.45, 0);
-  g.add(legL, legR);
-
-  // sword on the back
-  const sword = new THREE.Group();
-  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.07, 1.25, 0.02),
-    new THREE.MeshStandardMaterial({ color: 0xbfd6d2, metalness: 0.8, roughness: 0.3 }));
-  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.05, 0.06), trim);
-  guard.position.y = -0.62;
-  const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.25, 6), dark);
-  grip.position.y = -0.78;
-  sword.add(blade, guard, grip);
-  sword.position.set(0.1, 1.8, -0.4);
-  sword.rotation.z = 0.5;
-  g.add(sword);
-
-  return { group: g, armL, armR, legL, legR, body, sword };
+function loadGLB(url) {
+  return new Promise((res, rej) => loader.load(url, res, undefined, rej));
 }
 
-function buildFlyingSword() {
+
+function buildFlySword() {
   const g = new THREE.Group();
-  const blade = new THREE.Mesh(
-    new THREE.BoxGeometry(0.55, 0.06, 2.6),
-    new THREE.MeshStandardMaterial({
-      color: 0x9fe0e8, metalness: 0.7, roughness: 0.25,
-      emissive: 0x1b5a66, emissiveIntensity: 0.8,
-    })
-  );
-  const tip = new THREE.Mesh(
-    new THREE.ConeGeometry(0.27, 0.5, 4),
-    blade.material
-  );
+  const bladeMat = new THREE.MeshStandardMaterial({
+    color: 0xb8ccd4, metalness: 0.85, roughness: 0.2,
+    emissive: 0x1b5a66, emissiveIntensity: 0.7,
+  });
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.05, 2.7), bladeMat);
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.21, 0.55, 4), bladeMat);
   tip.rotation.x = Math.PI / 2;
-  tip.position.z = 1.55;
+  tip.position.z = 1.62;
   const glow = new THREE.Mesh(
-    new THREE.BoxGeometry(0.62, 0.02, 2.7),
-    new THREE.MeshBasicMaterial({ color: 0x7ff5ff, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending })
+    new THREE.PlaneGeometry(0.8, 3.4),
+    new THREE.MeshBasicMaterial({ color: 0x6ff2ff, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false })
   );
-  glow.position.y = -0.05;
+  glow.rotation.x = -Math.PI / 2;
+  glow.position.y = -0.04;
   g.add(blade, tip, glow);
   return g;
 }
 
+function buildAccessories(robeMat) {
+  const g = new THREE.Group();
+  const gold = new THREE.MeshStandardMaterial({ color: 0xd8b96a, metalness: 0.7, roughness: 0.3 });
+  const jade = new THREE.MeshStandardMaterial({ color: 0x9fd8bb, roughness: 0.4, emissive: 0x1d3a2a, emissiveIntensity: 0.4 });
+
+  // 襦裙：裙摆
+  const skirt = new THREE.Mesh(new THREE.ConeGeometry(0.34, 1.15, 16, 1, true), robeMat);
+  skirt.geometry.translate(0, -0.575, 0);
+  skirt.position.y = 1.02;
+  skirt.scale.set(1.15, 1, 1.05);
+  g.add(skirt);
+
+  // 腰封 + 玉带
+  const sash = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.05, 8, 20), gold);
+  sash.rotation.x = Math.PI / 2;
+  sash.position.y = 1.02;
+  g.add(sash);
+
+  // 发髻 + 玉簪
+  const bun = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 8), new THREE.MeshStandardMaterial({ color: 0x14100c, roughness: 0.9 }));
+  const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.3, 6), jade);
+  pin.rotation.z = Math.PI / 2;
+  pin.position.x = 0.02;
+  const bunGroup = new THREE.Group();
+  bunGroup.add(bun, pin);
+
+  // 背负长剑
+  const sword = new THREE.Group();
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.055, 1.3, 0.016),
+    new THREE.MeshStandardMaterial({ color: 0xbfd6d2, metalness: 0.9, roughness: 0.25 }));
+  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.045, 0.05), gold);
+  guard.position.y = -0.65;
+  const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.24, 6), new THREE.MeshStandardMaterial({ color: 0x2a1f14, roughness: 0.9 }));
+  grip.position.y = -0.79;
+  sword.add(blade, guard, grip);
+  sword.rotation.z = 0.6;
+
+  return { group: g, bunGroup, sword };
+}
+
 export class Player {
-  constructor(scene, terrainHeight, spawn) {
+  static async create(scene, terrainHeight, spawn) {
+    const michelle = await loadGLB('models/Michelle.glb');
+    return new Player(scene, terrainHeight, spawn, michelle);
+  }
+
+  constructor(scene, terrainHeight, spawn, michelle) {
     this.terrainHeight = terrainHeight;
-    const parts = buildCultivator();
-    this.parts = parts;
-    this.mesh = parts.group;
+
+    const model = michelle.scene;
+    // 归一化到真实身高 1.72
+    const bb = new THREE.Box3().setFromObject(model);
+    const h = bb.max.y - bb.min.y;
+    const scale = 1.72 / h;
+    model.scale.setScalar(scale);
+    model.position.y = -bb.min.y * scale;
+
+    this.mesh = new THREE.Group();
+    this.inner = new THREE.Group();
+    this.inner.add(model);
+    this.mesh.add(this.inner);
     this.mesh.position.copy(spawn);
     scene.add(this.mesh);
 
-    this.flySword = buildFlyingSword();
+    model.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; } });
+
+    // 程序化骨骼动画（两套骨架姿态不同，不引入外部动画）
+    this.bones = {};
+    model.traverse((o) => {
+      if (o.isBone) this.bones[o.name] = { bone: o, rest: o.quaternion.clone(), restPos: o.position.clone() };
+    });
+    this.animT = 0;
+
+    // 汉服配饰
+    const robeTex = new THREE.TextureLoader().load('textures/robe.jpg');
+    robeTex.colorSpace = THREE.SRGBColorSpace;
+    robeTex.wrapS = robeTex.wrapT = THREE.RepeatWrapping;
+    const robeMat = new THREE.MeshStandardMaterial({ map: robeTex, color: 0x9fc8a8, roughness: 0.75, side: THREE.DoubleSide });
+    const acc = buildAccessories(robeMat);
+    this.inner.add(acc.group);
+    this.swordMesh = acc.sword;
+    // 剑挂背后、发髻上头
+    const spine = this.bones['mixamorigSpine2']?.bone;
+    if (spine) { acc.sword.position.set(0.02, 0.18, -16); acc.sword.scale.setScalar(100); spine.add(acc.sword); }
+    else this.inner.add(acc.sword.translateY(1.55));
+    const head = this.bones['mixamorigHead']?.bone;
+    if (head) { acc.bunGroup.position.set(0, 22, 2); acc.bunGroup.scale.setScalar(100); head.add(acc.bunGroup); }
+    else this.inner.add(acc.bunGroup.translateY(1.78));
+
+    this.flySword = buildFlySword();
     this.flySword.visible = false;
     scene.add(this.flySword);
 
-    // aura light, color set by cultivation realm
     this.aura = new THREE.PointLight(0x7ff5c8, 0, 8);
     this.mesh.add(this.aura);
 
     this.vel = new THREE.Vector3();
-    this.yaw = 0;            // facing
+    this.yaw = 0;
     this.grounded = true;
     this.flying = false;
     this.meditating = false;
     this.walkPhase = 0;
     this.spawn = spawn.clone();
+    this.meditateT = 0;
   }
 
   get position() { return this.mesh.position; }
+
+  play(name, fade = 0.25) {
+    const next = this.actions[name] || this.actions.Idle;
+    if (!next || next === this.current) return;
+    next.reset().fadeIn(fade).play();
+    if (this.current) this.current.fadeOut(fade);
+    this.current = next;
+  }
 
   toggleFly() {
     this.flying = !this.flying;
     if (this.flying) { this.meditating = false; this.vel.y = Math.max(this.vel.y, 3); }
     this.flySword.visible = this.flying;
-    this.parts.sword.visible = !this.flying;
+    this.swordMesh.visible = !this.flying;
   }
 
   toggleMeditate() {
     if (this.flying) return;
     this.meditating = !this.meditating;
+  }
+
+  applyMeditatePose(k) {
+    // k: 0 站立 → 1 全打坐；盘腿、合臂、沉髋
+    const b = this.bones;
+    const set = (name, x, y, z) => {
+      const ref = b[name];
+      if (!ref) return;
+      const target = ref.rest.clone().multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z)));
+      ref.bone.quaternion.slerpQuaternions(ref.rest, target, k);
+    };
+    set('mixamorigLeftUpLeg', -1.35, 0.35, 0.15);
+    set('mixamorigRightUpLeg', -1.35, -0.35, -0.15);
+    set('mixamorigLeftLeg', 2.2, 0, 0);
+    set('mixamorigRightLeg', 2.2, 0, 0);
+    set('mixamorigLeftArm', 0.4, 0, -0.9);
+    set('mixamorigRightArm', 0.4, 0, 0.9);
+    set('mixamorigLeftForeArm', 0, -1.1, 0);
+    set('mixamorigRightForeArm', 0, 1.1, 0);
+    const hips = b['mixamorigHips'];
+    if (hips) hips.bone.position.y = THREE.MathUtils.lerp(hips.restPos.y, hips.restPos.y - 55, k);
+  }
+
+  // 行走/跑步：摆腿摆臂；站立：呼吸微动
+  animate(dt, spd) {
+    const b = this.bones;
+    const set = (name, x, y, z) => {
+      const ref = b[name];
+      if (!ref) return;
+      const target = new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z));
+      ref.bone.quaternion.slerp(ref.rest.clone().multiply(target), 0.2);
+    };
+    const runK = THREE.MathUtils.clamp(spd / RUN, 0, 1);
+    if (spd > 0.5) {
+      this.animT += dt * (4 + runK * 7);
+      const s = Math.sin(this.animT), c = Math.cos(this.animT);
+      const amp = 0.35 + runK * 0.35;
+      set('mixamorigLeftUpLeg', s * amp, 0, 0.06);
+      set('mixamorigRightUpLeg', -s * amp, 0, -0.06);
+      set('mixamorigLeftLeg', Math.max(0, -c) * amp * 1.4 + 0.1, 0, 0);
+      set('mixamorigRightLeg', Math.max(0, c) * amp * 1.4 + 0.1, 0, 0);
+      set('mixamorigLeftArm', -s * amp * 0.55, 0, -0.95);
+      set('mixamorigRightArm', s * amp * 0.55, 0, 0.95);
+      set('mixamorigSpine1', runK * 0.12, s * 0.05, 0);
+    } else {
+      this.animT += dt * 1.4;
+      const br = Math.sin(this.animT) * 0.03;
+      set('mixamorigSpine1', br, 0, 0);
+      set('mixamorigLeftArm', 0, 0, -1.15 + br);
+      set('mixamorigRightArm', 0, 0, 1.15 - br);
+      set('mixamorigLeftUpLeg', 0, 0, 0.05);
+      set('mixamorigRightUpLeg', 0, 0, -0.05);
+      set('mixamorigLeftLeg', 0.06, 0, 0);
+      set('mixamorigRightLeg', 0.06, 0, 0);
+    }
   }
 
   update(dt, input, camYaw) {
@@ -137,9 +220,14 @@ export class Player {
     if (this.meditating) {
       this.vel.set(0, 0, 0);
       p.y = Math.max(p.y, ground);
-      this.poseMeditate();
+      this.meditateT = Math.min(1, this.meditateT + dt * 3);
+      this.applyMeditatePose(this.meditateT);
       this.flySword.visible = false;
       return;
+    }
+    if (this.meditateT > 0) {
+      this.meditateT = Math.max(0, this.meditateT - dt * 4);
+      this.applyMeditatePose(this.meditateT);
     }
 
     const ix = (input.d ? 1 : 0) - (input.a ? 1 : 0);
@@ -154,17 +242,28 @@ export class Player {
       const vert = (input.jump ? 1 : 0) - (input.down ? 1 : 0);
       this.vel.y = THREE.MathUtils.lerp(this.vel.y, vert * speed * 0.7, 0.15);
       p.addScaledVector(this.vel, dt);
-      // stay above terrain
       if (p.y < ground + 0.6) p.y = ground + 0.6;
       p.y = Math.min(p.y, 110);
       if (moving) this.yaw = Math.atan2(this.vel.x, this.vel.z);
-      this.walkPhase += dt * (moving ? 3 : 1);
-      this.poseFly(vert, moving);
-      this.flySword.position.set(p.x, p.y + 0.05, p.z);
+      this.walkPhase += dt * 2;
+      this.inner.rotation.x = THREE.MathUtils.lerp(this.inner.rotation.x, moving ? 0.18 : 0, 0.1);
+      this.flySword.position.set(p.x, p.y + 0.02, p.z);
       this.flySword.rotation.y = this.yaw;
-      this.flySword.rotation.x = THREE.MathUtils.lerp(this.flySword.rotation.x, moving ? 0.12 : 0, 0.1);
+      this.flySword.rotation.x = THREE.MathUtils.lerp(this.flySword.rotation.x, moving ? 0.1 : 0, 0.1);
       this.flySword.rotation.z = Math.sin(this.walkPhase) * 0.05;
+      this.animate(dt, 0);
+      // 飞行时衣袂后扬：腿微分、手臂后展
+      const fb = this.bones;
+      const fset = (name, x, y, z) => {
+        const ref = fb[name]; if (!ref) return;
+        ref.bone.quaternion.copy(ref.rest).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z)));
+      };
+      fset('mixamorigLeftArm', -0.9, 0, -0.35);
+      fset('mixamorigRightArm', -0.9, 0, 0.35);
+      fset('mixamorigLeftUpLeg', 0.15, 0, 0.1);
+      fset('mixamorigRightUpLeg', -0.1, 0, -0.1);
     } else {
+      this.inner.rotation.x = 0;
       const speed = input.shift ? RUN : WALK;
       const dir = new THREE.Vector3(ix, 0, iz).normalize().applyAxisAngle(new THREE.Vector3(0, 1, 0), camYaw);
       this.vel.x = THREE.MathUtils.lerp(this.vel.x, dir.x * speed * (moving ? 1 : 0), 0.2);
@@ -175,56 +274,16 @@ export class Player {
       if (p.y <= ground) { p.y = ground; this.vel.y = 0; this.grounded = true; }
       else this.grounded = false;
       if (moving) this.yaw = Math.atan2(this.vel.x, this.vel.z);
-      this.walkPhase += dt * (moving ? speed * 1.1 : 0);
-      this.poseWalk(moving);
+
+      const spd = Math.hypot(this.vel.x, this.vel.z);
+      this.animate(dt, spd);
     }
 
-    // soft world bounds
     const d = Math.hypot(p.x, p.z);
     if (d > 185) { p.x *= 185 / d; p.z *= 185 / d; }
 
-    // smooth facing
     let dy = this.yaw - this.mesh.rotation.y;
     dy = Math.atan2(Math.sin(dy), Math.cos(dy));
     this.mesh.rotation.y += dy * 0.25;
-  }
-
-  poseWalk(moving) {
-    const { armL, armR, legL, legR, body } = this.parts;
-    const s = Math.sin(this.walkPhase);
-    if (moving) {
-      legL.rotation.x = s * 0.7; legR.rotation.x = -s * 0.7;
-      armL.rotation.x = -s * 0.5; armR.rotation.x = s * 0.5;
-      legL.visible = legR.visible = true;
-      body.position.y = 1.05 + Math.abs(Math.sin(this.walkPhase)) * 0.05;
-    } else {
-      legL.rotation.x = legR.rotation.x = 0;
-      armL.rotation.x = armR.rotation.x = 0;
-      legL.visible = legR.visible = true;
-      body.position.y = 1.05;
-    }
-    armL.rotation.z = 0.18; armR.rotation.z = -0.18;
-    this.mesh.position.y += 0; // keep
-    if (!legL.visible) { legL.visible = legR.visible = true; }
-    this.mesh.scale.setScalar(1);
-  }
-
-  poseFly(vert, moving) {
-    const { armL, armR, legL, legR } = this.parts;
-    legL.visible = legR.visible = true;
-    legL.rotation.x = legR.rotation.x = 0.15;
-    armL.rotation.x = armR.rotation.x = -0.4;
-    armL.rotation.z = 0.6; armR.rotation.z = -0.6;
-    this.mesh.rotation.x = THREE.MathUtils.lerp(this.mesh.rotation.x, moving ? 0.15 : 0, 0.1);
-    if (!this.flying) this.mesh.rotation.x = 0;
-  }
-
-  poseMeditate() {
-    const { armL, armR, legL, legR } = this.parts;
-    // cross-legged: hide lower legs, arms folded
-    legL.visible = legR.visible = false;
-    armL.rotation.x = armR.rotation.x = -1.2;
-    armL.rotation.z = 0.9; armR.rotation.z = -0.9;
-    this.mesh.rotation.x = 0;
   }
 }

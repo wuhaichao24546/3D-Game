@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import { glowTexture } from './world.js';
+
+const GLOW = glowTexture();
 
 // ---- sword-qi projectiles -------------------------------------------------
 export class Projectiles {
@@ -65,7 +68,7 @@ export class Bursts {
     }
     geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
     const mat = new THREE.PointsMaterial({
-      color, size: 0.45, transparent: true, opacity: 1,
+      color, size: 0.45, transparent: true, opacity: 1, map: GLOW,
       blending: THREE.AdditiveBlending, depthWrite: false,
     });
     const pts = new THREE.Points(geo, mat);
@@ -98,7 +101,7 @@ export class MeditationAura {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3));
     this.pts = new THREE.Points(geo, new THREE.PointsMaterial({
-      color: 0xaef0c8, size: 0.3, transparent: true, opacity: 0.9,
+      color: 0xaef0c8, size: 0.3, transparent: true, opacity: 0.9, map: GLOW,
       blending: THREE.AdditiveBlending, depthWrite: false,
     }));
     this.pts.visible = false;

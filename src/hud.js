@@ -4,9 +4,11 @@ export class HUD {
     this.expBar = document.getElementById('exp-bar');
     this.expText = document.getElementById('exp-text');
     this.stonesEl = document.getElementById('spirit-stones');
+    this.timeEl = document.getElementById('time-of-day');
     this.banner = document.getElementById('banner');
     this.lockTip = document.getElementById('lock-tip');
     this._bannerTimer = null;
+    this._lastShichen = -1;
   }
 
   update(cult) {
@@ -19,6 +21,15 @@ export class HUD {
       ? '已至化境'
       : `${Math.floor(cult.exp)} / ${r.need} 修为`;
     this.stonesEl.textContent = `灵石 × ${cult.spiritStones}`;
+  }
+
+  setTimeOfDay(t, shichen, day = 1) {
+    // t∈[0,1): 0=子 0.25=卯(日出) 0.5=午 0.75=酉(日落)
+    const idx = Math.floor(t * 12 + 0.5) % 12;
+    const text = `${day > 0.3 ? '☀' : '☾'} ${shichen[idx]}时`;
+    if (text === this._lastTime) return;
+    this._lastTime = text;
+    this.timeEl.textContent = text;
   }
 
   showBanner(text, ms = 2600) {
