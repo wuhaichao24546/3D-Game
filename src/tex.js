@@ -276,14 +276,10 @@ export const flameFeatherTex = () => canvasTex(64, 256, (g, w, h) => {
   }
 }, false);
 
-// 火凤羽（写实：绯红羽身、金橙羽尖、羽轴羽枝）
-export const phoenixFeatherTex = () => canvasTex(96, 320, (g, w, h) => {
+// 羽片通用生成：stops 为 [位置(0=根,1=尖), 颜色] 纵向色带
+const featherBlade = (stops, { barbD = '60,8,4', barbL = '255,200,120', shaft0 = 'rgba(255,240,200,0.95)', shaft1 = 'rgba(255,190,110,0.75)', shaftT = 'rgba(255,160,60,0)', edge = 'rgba(90,14,6,0.55)' } = {}) => canvasTex(96, 320, (g, w, h) => {
   const gr = g.createLinearGradient(0, h, 0, 0);
-  gr.addColorStop(0, 'rgba(74,10,6,1)');      // 根 暗绯
-  gr.addColorStop(0.35, 'rgba(150,26,10,1)'); // 下 绯红
-  gr.addColorStop(0.65, 'rgba(216,70,16,1)'); // 中 橙红
-  gr.addColorStop(0.88, 'rgba(246,150,44,1)');// 上 金橙
-  gr.addColorStop(1, 'rgba(255,214,110,1)');  // 尖 鎏金
+  for (const [o, c] of stops) gr.addColorStop(o, c);
   g.fillStyle = gr;
   g.beginPath();
   // 羽形：根窄、中鼓、尖收
@@ -297,13 +293,13 @@ export const phoenixFeatherTex = () => canvasTex(96, 320, (g, w, h) => {
   g.clip();
   for (let y = h * 0.05; y < h; y += 9) {
     const a = 0.1 + 0.25 * (y / h);
-    g.strokeStyle = `rgba(60,8,4,${a * 0.5})`;
+    g.strokeStyle = `rgba(${barbD},${a * 0.5})`;
     g.lineWidth = 1.4;
     g.beginPath();
     g.moveTo(w / 2, y); g.lineTo(w * 0.06, y + 16);
     g.moveTo(w / 2, y); g.lineTo(w * 0.94, y + 16);
     g.stroke();
-    g.strokeStyle = `rgba(255,200,120,${a * 0.35})`;
+    g.strokeStyle = `rgba(${barbL},${a * 0.35})`;
     g.lineWidth = 0.8;
     g.beginPath();
     g.moveTo(w / 2, y + 4); g.lineTo(w * 0.14, y + 19);
@@ -312,20 +308,97 @@ export const phoenixFeatherTex = () => canvasTex(96, 320, (g, w, h) => {
   }
   // 羽轴：根亮渐隐
   const shaft = g.createLinearGradient(0, h, 0, 0);
-  shaft.addColorStop(0, 'rgba(255,240,200,0.95)');
-  shaft.addColorStop(0.4, 'rgba(255,190,110,0.75)');
-  shaft.addColorStop(1, 'rgba(255,160,60,0)');
+  shaft.addColorStop(0, shaft0);
+  shaft.addColorStop(0.4, shaft1);
+  shaft.addColorStop(1, shaftT);
   g.strokeStyle = shaft; g.lineWidth = 3.5;
   g.beginPath(); g.moveTo(w / 2, h); g.lineTo(w / 2, h * 0.04); g.stroke();
   g.restore();
   // 羽缘深线收形
-  g.strokeStyle = 'rgba(90,14,6,0.55)'; g.lineWidth = 2.5;
+  g.strokeStyle = edge; g.lineWidth = 2.5;
   g.beginPath();
   g.moveTo(w / 2, h);
   g.bezierCurveTo(w * 0.08, h * 0.78, w * 0.1, h * 0.3, w * 0.42, h * 0.06);
   g.quadraticCurveTo(w * 0.5, 0, w * 0.58, h * 0.06);
   g.bezierCurveTo(w * 0.9, h * 0.3, w * 0.92, h * 0.78, w / 2, h);
   g.stroke();
+}, false);
+
+// 火凤羽（写实：绯红羽身、金橙羽尖、羽轴羽枝）
+export const phoenixFeatherTex = () => featherBlade([
+  [0, 'rgba(74,10,6,1)'],      // 根 暗绯
+  [0.35, 'rgba(150,26,10,1)'], // 下 绯红
+  [0.65, 'rgba(216,70,16,1)'], // 中 橙红
+  [0.88, 'rgba(246,150,44,1)'],// 上 金橙
+  [1, 'rgba(255,214,110,1)'],  // 尖 鎏金
+]);
+
+// 白虎羽（灰褐羽根、雪白羽身、淡金羽尖）
+export const whiteFeatherTex = () => featherBlade([
+  [0, 'rgba(64,58,48,1)'],
+  [0.3, 'rgba(148,140,124,1)'],
+  [0.58, 'rgba(228,224,212,1)'],
+  [0.85, 'rgba(252,248,236,1)'],
+  [1, 'rgba(255,224,148,1)'],
+], {
+  barbD: '96,84,64', barbL: '255,252,240',
+  shaft0: 'rgba(255,246,220,0.95)', shaft1: 'rgba(240,220,170,0.7)', shaftT: 'rgba(220,200,150,0)',
+  edge: 'rgba(130,110,80,0.5)',
+});
+
+// 鬃毛绺（龙/麒麟鬃尾：束状毛发，根部实、梢端散）— root/mid/tip 为 'r,g,b'
+export const maneStrandTex = ({ root = '40,52,48', mid = '214,236,226', tip = '232,246,240' } = {}) => canvasTex(64, 256, (g, w, h) => {
+  const R = mulberry(7);
+  for (let s = 0; s < 16; s++) {
+    const x0 = w * (0.12 + 0.76 * (s / 15)) + (R() - 0.5) * 6;
+    const sway = (R() - 0.5) * w * 0.5;
+    const c = 0.7 + R() * 0.3;
+    const gr = g.createLinearGradient(0, h, 0, 0);
+    gr.addColorStop(0, `rgba(${root},1)`);
+    gr.addColorStop(0.5, `rgba(${mid},${c})`);
+    gr.addColorStop(1, `rgba(${tip},0)`);
+    g.strokeStyle = gr;
+    g.lineWidth = 2.5 + R() * 2.5;
+    g.beginPath();
+    g.moveTo(x0, h);
+    g.bezierCurveTo(x0 + sway * 0.3, h * 0.62, x0 + sway, h * 0.3, x0 + sway * 1.3, h * 0.04 + R() * h * 0.1);
+    g.stroke();
+  }
+}, false);
+
+// 龙背鳍膜：半透明膜+放射鳍条
+export const dragonFinTex = () => canvasTex(96, 224, (g, w, h) => {
+  const gr = g.createLinearGradient(0, h, 0, 0);
+  gr.addColorStop(0, 'rgba(120,180,160,0.35)');
+  gr.addColorStop(0.55, 'rgba(190,238,222,0.6)');
+  gr.addColorStop(1, 'rgba(240,255,246,0.9)');
+  g.fillStyle = gr;
+  g.beginPath();
+  g.moveTo(w * 0.06, h);
+  // 扇形膜顶：波浪状
+  g.bezierCurveTo(w * 0.02, h * 0.5, w * 0.22, h * 0.12, w * 0.4, h * 0.05);
+  g.quadraticCurveTo(w * 0.55, h * 0.14, w * 0.66, h * 0.04);
+  g.quadraticCurveTo(w * 0.8, h * 0.12, w * 0.94, h * 0.06);
+  g.bezierCurveTo(w * 0.98, h * 0.4, w * 0.96, h * 0.7, w * 0.9, h);
+  g.closePath();
+  g.fill();
+  g.save();
+  g.clip();
+  // 鳍条
+  for (let i = 0; i < 6; i++) {
+    const x = w * (0.16 + i * 0.14);
+    g.strokeStyle = 'rgba(255,255,250,0.5)'; g.lineWidth = 1.8;
+    g.beginPath(); g.moveTo(w * 0.5, h); g.lineTo(x, h * 0.08); g.stroke();
+  }
+  // 膜缘
+  g.strokeStyle = 'rgba(235,255,246,0.85)'; g.lineWidth = 2;
+  g.beginPath();
+  g.moveTo(w * 0.06, h);
+  g.bezierCurveTo(w * 0.02, h * 0.5, w * 0.22, h * 0.12, w * 0.4, h * 0.05);
+  g.quadraticCurveTo(w * 0.55, h * 0.14, w * 0.66, h * 0.04);
+  g.quadraticCurveTo(w * 0.8, h * 0.12, w * 0.94, h * 0.06);
+  g.stroke();
+  g.restore();
 }, false);
 
 // 小火苗精灵

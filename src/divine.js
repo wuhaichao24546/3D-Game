@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import {
-  scaleTex, tigerTex, runeLinesTex, deerTex, flameFeatherTex, flameTex,
+  scaleTex, tigerTex, runeLinesTex, deerTex, flameTex,
   talismanTex, runeCircleTex, mulberry, phoenixFeatherTex,
+  whiteFeatherTex, maneStrandTex, dragonFinTex,
 } from './tex.js';
 
 export const furTex = (() => {
@@ -24,8 +25,13 @@ const additive = (opts) => new THREE.MeshBasicMaterial({
 
 let _flame;
 const flameT = () => (_flame ||= flameTex());
-let _feather;
-const featherT = () => (_feather ||= flameFeatherTex());
+let _whiteFeather;
+const whiteFeatherT = () => (_whiteFeather ||= whiteFeatherTex());
+let _dragonFin;
+const dragonFinT = () => (_dragonFin ||= dragonFinTex());
+let _maneJade, _maneGold;
+const maneJadeT = () => (_maneJade ||= maneStrandTex());
+const maneGoldT = () => (_maneGold ||= maneStrandTex({ root: '52,30,8', mid: '236,200,124', tip: '255,232,168' }));
 
 // 鹿角/龙角：主干 + 分叉
 function antler(mat, side, len = 1, tines = 3) {
@@ -53,8 +59,13 @@ export function buildDragon(scene, { center = V(0, 0, 0), radius = 130, height =
   const hairMat = new THREE.MeshStandardMaterial({ color: 0xeef6f2, roughness: 0.8, emissive: 0x223330 });
   const segGeo = new THREE.SphereGeometry(1, 16, 12);
   const segs = new THREE.InstancedMesh(segGeo, bodyMat, N);
-  const finGeo = new THREE.ConeGeometry(0.35, 1.4, 5).translate(0, 0.7, 0);
-  const fins = new THREE.InstancedMesh(finGeo, hairMat, N);
+  const finT = dragonFinT();
+  const finGeo = new THREE.PlaneGeometry(3.0, 1.6).rotateY(Math.PI / 2).translate(0, 0.8, 0);
+  const finMat = new THREE.MeshStandardMaterial({
+    map: finT, alphaTest: 0.15, transparent: true, side: THREE.DoubleSide, depthWrite: false,
+    emissiveMap: finT, emissive: 0x8fd8c8, emissiveIntensity: 0.5, roughness: 0.6,
+  });
+  const fins = new THREE.InstancedMesh(finGeo, finMat, N);
   segs.frustumCulled = fins.frustumCulled = false;
   scene.add(segs, fins);
   const radiusAt = (i) => {
@@ -87,11 +98,15 @@ export function buildDragon(scene, { center = V(0, 0, 0), radius = 130, height =
     const wh = tube([V(sx * 0.6, 0, 3.3), V(sx * 1.8, 0.4, 3.0), V(sx * 3.2, 0.2, 1.2), V(sx * 4.2, -0.8, -1.5), V(sx * 4.6, -1.8, -3.5)], 0.045, 30, 5);
     head.add(new THREE.Mesh(wh, ivory));
   }
-  for (let k = 0; k < 18; k++) { // 鬃毛
-    const a = (k / 17 - 0.5) * 2.6;
-    const c = mesh(new THREE.ConeGeometry(0.28, 2.2 + (k % 3) * 0.6, 5), hairMat, Math.sin(a) * 1.25, Math.cos(a) * 0.9 - 0.1, -0.8);
-    c.rotation.x = -1.9; c.rotation.z = -a * 0.5;
-    head.add(c);
+  const maneMat = new THREE.MeshStandardMaterial({
+    map: maneJadeT(), alphaTest: 0.2, transparent: true, side: THREE.DoubleSide, depthWrite: false,
+    emissiveMap: maneJadeT(), emissive: 0x9fd8cc, emissiveIntensity: 0.3, roughness: 0.85,
+  });
+  for (let k = 0; k < 14; k++) { // 鬃毛绺：束状发丝向后披散
+    const a = (k / 13 - 0.5) * 2.4;
+    const f = new THREE.Mesh(featherGeo(2.0 + (k % 3) * 0.7, 0.5), maneMat);
+    placeFeather(f, V(Math.sin(a) * 1.15, Math.cos(a) * 0.85 - 0.1, -0.7), V(Math.sin(a) * 0.5, Math.cos(a) * 0.35, -1));
+    head.add(f);
   }
   for (let k = 0; k < 6; k++) { // 龙须髯
     const c = mesh(new THREE.ConeGeometry(0.16, 1.4, 5), hairMat, (k - 2.5) * 0.25, -1.2, 1.5 + (k % 2) * 0.2);
@@ -154,7 +169,7 @@ export function buildDragon(scene, { center = V(0, 0, 0), radius = 130, height =
         dummy.updateMatrix();
         segs.setMatrixAt(i, dummy.matrix);
         dummy.translateY(r * 0.82);
-        dummy.scale.setScalar(i % 2 ? 0 : r * 0.55);
+        dummy.scale.setScalar(i < 2 ? 0 : r * 0.55);
         dummy.updateMatrix();
         fins.setMatrixAt(i, dummy.matrix);
       }
@@ -411,21 +426,35 @@ export function buildTiger() {
   tail.add(new THREE.Mesh(tube([V(0, 0, 0), V(-0.6, -0.4, -0.6), V(-1.6, -0.45, -0.3), V(-2.1, -0.3, 0.6), V(-2.0, 0.1, 1.2)], 0.17, 24, 8), fur));
   tail.add(mesh(new THREE.SphereGeometry(0.22, 10, 8), new THREE.MeshStandardMaterial({ color: 0x3a2a24 }), -2.0, 0.15, 1.25));
   g.add(tail);
-  // 双翼
-  const wingMat = new THREE.MeshStandardMaterial({
-    map: featherT(), color: 0xffffff, emissive: 0xffd880, emissiveMap: featherT(), emissiveIntensity: 0.8,
-    transparent: true, alphaTest: 0.05, side: THREE.DoubleSide, depthWrite: false,
+  // 双翼：与凤凰同法 —— 翼臂 + 覆羽 + 次级/初级飞羽分层（雪白淡金）
+  const wFeatherMat = (color, ei) => new THREE.MeshStandardMaterial({
+    map: whiteFeatherT(), color, alphaTest: 0.32, side: THREE.DoubleSide,
+    emissiveMap: whiteFeatherT(), emissive: 0xd8a850, emissiveIntensity: ei, roughness: 0.7, metalness: 0.08,
   });
+  const wCovert = wFeatherMat(0xe6ddc8, 0.35);
+  const wFlight = wFeatherMat(0xffffff, 0.45);
+  const wFeather = (len, w, mat) => new THREE.Mesh(featherGeo(len, w), mat);
   const wings = [];
   for (const sx of [-1, 1]) {
     const w = new THREE.Group(); w.position.set(sx * 0.55, 2.0, 0.4);
-    for (let k = 0; k < 10; k++) {
-      const len = 1.4 + Math.sin((k / 9) * Math.PI) * 1.4 + k * 0.08;
-      const f = new THREE.Mesh(new THREE.PlaneGeometry(0.55, len).translate(0, len / 2, 0), wingMat);
-      f.rotation.order = 'YZX';
-      f.rotation.z = -sx * (0.25 + k * 0.13);
-      f.rotation.x = -0.5 - k * 0.07;
-      f.rotation.y = sx * 0.6;
+    w.scale.x = sx;
+    w.add(new THREE.Mesh(tube([V(0, 0, 0.35), V(0.85, 0.14, 0.0), V(1.85, 0.08, -0.55)], 0.13, 8, 6), fur));
+    for (let k = 0; k < 9; k++) { // 覆羽
+      const u = k / 8, len = 0.5 + u * 0.55;
+      const f = wFeather(len, len * 0.42, wCovert);
+      placeFeather(f, V(0.18 + u * 1.55, 0.08, 0.18 - u * 0.6), V(0.14 + u * 0.28, 0.05, -1));
+      w.add(f);
+    }
+    for (let k = 0; k < 6; k++) { // 次级飞羽
+      const u = k / 5, len = 1.05 + u * 0.7;
+      const f = wFeather(len, len * 0.2, wFlight);
+      placeFeather(f, V(0.75 + u * 1.1, 0.04, -0.15 - u * 0.5), V(0.2 + u * 0.32, 0, -1));
+      w.add(f);
+    }
+    for (let k = 0; k < 5; k++) { // 初级飞羽扇开
+      const u = k / 4, len = 1.7 + u * 0.85;
+      const f = wFeather(len, len * 0.16, wFlight);
+      placeFeather(f, V(1.8 + u * 0.5, 0, -0.55 - u * 0.28), V(0.34 + u * 0.55, -0.02, -1), (u - 0.5) * 0.32);
       w.add(f);
     }
     g.add(w); wings.push({ w, sx });
@@ -490,25 +519,33 @@ export function buildQilin() {
     head.add(c);
   }
   g.add(head);
-  for (let k = 0; k < 22; k++) { // 鬃毛顺着颈背
-    const t = k / 21;
-    const c = mesh(new THREE.ConeGeometry(0.16, 0.9 + Math.random() * 0.6, 5), mane,
-      (Math.random() - 0.5) * 0.5, 4.2 - t * 1.7, 2.0 - t * 1.0);
-    c.rotation.x = -1.3 - Math.random() * 0.4; c.rotation.z = (Math.random() - 0.5) * 0.8;
-    g.add(c);
+  const qManeMat = new THREE.MeshStandardMaterial({
+    map: maneGoldT(), alphaTest: 0.2, transparent: true, side: THREE.DoubleSide, depthWrite: false,
+    emissiveMap: maneGoldT(), emissive: 0x9a5e16, emissiveIntensity: 0.45, roughness: 0.8,
+  });
+  for (let k = 0; k < 16; k++) { // 鬃毛绺：金鬃沿颈背披散
+    const t = k / 15;
+    const f = new THREE.Mesh(featherGeo(1.0 + Math.random() * 0.7, 0.3), qManeMat);
+    placeFeather(f,
+      V((Math.random() - 0.5) * 0.45, 4.25 - t * 1.8, 2.0 - t * 1.0),
+      V((Math.random() - 0.5) * 0.4, 0.45 + Math.random() * 0.3, -1));
+    g.add(f);
   }
   for (const [x, z] of [[-0.45, 1.1], [0.45, 1.1], [-0.45, -1.0], [0.45, -1.0]]) {
     g.add(mesh(new THREE.CylinderGeometry(0.2, 0.24, 1.15, 10), scale, x, 1.45, z));
     g.add(mesh(new THREE.CylinderGeometry(0.13, 0.17, 1.0, 8), scale, x, 0.55, z + 0.05));
     g.add(mesh(new THREE.CylinderGeometry(0.17, 0.2, 0.18, 8), new THREE.MeshStandardMaterial({ color: 0x3a3630, metalness: 0.4 }), x, 0.09, z + 0.07));
-    for (let k = 0; k < 3; k++) {
-      const tuft = mesh(new THREE.ConeGeometry(0.08, 0.4, 4), mane, x + (k - 1) * 0.08, 0.35, z - 0.12);
-      tuft.rotation.x = -2.2;
-      g.add(tuft);
-    }
+    const tuft = new THREE.Mesh(featherGeo(0.42, 0.2), qManeMat);
+    placeFeather(tuft, V(x, 0.42, z - 0.12), V(x * 0.4, -0.4, -1));
+    g.add(tuft);
   }
   const tail = new THREE.Mesh(tube([V(0, 2.4, -1.6), V(0, 2.9, -2.2), V(0, 3.8, -2.3), V(0, 4.3, -1.7)], 0.13, 16, 6), scale);
   g.add(tail);
+  for (let k = 0; k < 4; k++) { // 尾端鬃穗
+    const f = new THREE.Mesh(featherGeo(0.9 + Math.random() * 0.5, 0.24), qManeMat);
+    placeFeather(f, V((Math.random() - 0.5) * 0.3, 4.2, -1.75), V((Math.random() - 0.5) * 0.5, 0.9, -0.4));
+    g.add(f);
+  }
   // 焰光
   const flames = [];
   const flameMatGold = additive({ map: flameT(), color: 0xffc040, opacity: 0.85 });
