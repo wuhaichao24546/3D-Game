@@ -3,6 +3,7 @@ import { SimplexNoise } from 'three/addons/math/SimplexNoise.js';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { Water } from 'three/addons/objects/Water.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { buildRealm } from './realm.js';
 
 // ---- seeded rng + noise --------------------------------------------------
 function mulberry32(seed) {
@@ -35,7 +36,42 @@ export function riverDist(x, z) {
   return Math.abs(x - riverX(z));
 }
 
+// 建筑/祭坛所在处的平整地块：{x,z,r,h}，h 为空则取原地形高度
+export const SITES = {
+  village: { x: 40, z: 72, r: 24 },
+  hut: { x: -75, z: 90, r: 11 },
+  altar: { x: -130, z: -40, r: 17 },
+  tree: { x: 120, z: 90, r: 15 },
+  tiger: { x: 130, z: -130, r: 7 },
+};
+for (const k in SITES) {
+  const s = SITES[k];
+  s.h = Math.max(WATER_LEVEL + 1.6, baseHeight(s.x, s.z));
+}
+
 export function terrainHeight(x, z) {
+  let h = baseHeight(x, z);
+  for (const k in SITES) {
+    const s = SITES[k];
+    const dd = Math.hypot(x - s.x, z - s.z);
+    if (dd < s.r * 1.6) {
+      const w = THREE.MathUtils.smoothstep(s.r * 1.6 - dd, 0, s.r * 0.6)
+        * THREE.MathUtils.smoothstep(riverDist(x, z), 10, 18);
+      h = h * (1 - w) + s.h * w;
+    }
+  }
+  return h;
+}
+
+export function inSite(x, z, pad = 1) {
+  for (const k in SITES) {
+    const s = SITES[k];
+    if (Math.hypot(x - s.x, z - s.z) < s.r * pad) return true;
+  }
+  return false;
+}
+
+function baseHeight(x, z) {
   const d = Math.hypot(x, z);
   let h = 4 + fbm(x * 0.012, z * 0.012, 4) * 14;
   h += fbm(x * 0.045 + 99, z * 0.045 - 99, 3) * 2.2;
@@ -210,7 +246,7 @@ export function buildWorld(scene, renderer) {
     const x = (rng() * 2 - 1) * (WORLD_RADIUS - 15);
     const z = (rng() * 2 - 1) * (WORLD_RADIUS - 15);
     const h = terrainHeight(x, z);
-    if (h < WATER_LEVEL + 0.8 || h > 17) continue;
+    if (h < WATER_LEVEL + 0.8 || h > 17 || inSite(x, z, 1.5)) continue;
     const sc = 0.7 + rng() * 1.5;
     q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rng() * Math.PI * 2);
     s.setScalar(sc);
@@ -233,7 +269,7 @@ export function buildWorld(scene, renderer) {
     const x = (rng() * 2 - 1) * (WORLD_RADIUS - 10);
     const z = (rng() * 2 - 1) * (WORLD_RADIUS - 10);
     const h = terrainHeight(x, z);
-    if (h < WATER_LEVEL) continue;
+    if (h < WATER_LEVEL || inSite(x, z, 1.3)) continue;
     s.set(0.5 + rng() * 1.8, 0.4 + rng() * 1.2, 0.5 + rng() * 1.8);
     q.setFromEuler(new THREE.Euler(rng() * 3, rng() * 3, rng() * 3));
     m.compose(new THREE.Vector3(x, h + 0.1, z), q, s);
@@ -301,7 +337,7 @@ export function buildWorld(scene, renderer) {
   for (let i = 0; i < 6000 && bi < BAMBOO; i++) {
     const x = -60 - rng() * 55, z = 40 + rng() * 55;
     const h = terrainHeight(x, z);
-    if (h < WATER_LEVEL + 0.5 || h > 13 || riverDist(x, z) < 10) continue;
+    if (h < WATER_LEVEL + 0.5 || h > 13 || riverDist(x, z) < 10 || inSite(x, z, 1.4)) continue;
     const sc = 0.7 + rng() * 0.9;
     q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rng() * Math.PI * 2);
     s.setScalar(sc);
@@ -424,7 +460,7 @@ export function buildWorld(scene, renderer) {
     const rd = riverDist(x, z);
     if (rd > 30 || rd < 9) continue;
     const h = terrainHeight(x, z);
-    if (h < WATER_LEVEL + 0.4 || h > 13) continue;
+    if (h < WATER_LEVEL + 0.4 || h > 13 || inSite(x, z, 1.35)) continue;
     const sc = 0.6 + rng() * 0.9;
     q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rng() * Math.PI * 2);
     s.setScalar(sc);
@@ -624,6 +660,14 @@ export function buildWorld(scene, renderer) {
     pv.rotation.y = rng() * Math.PI * 2;
     scene.add(pv);
   }
+
+  // ---------- 村落 / 祭坛 / 神树 / 神兽（参考图补充） ----------
+  const env = { day: 1, night: 0, dusk: 0, sunAlt: 0 };
+  const realm = buildRealm(scene, {
+    terrainHeight, SITES, riverX, WATER_LEVEL, rockTex, barkTex, glowTex,
+    lake: { x: -24, z: -16, r: 30 },
+  });
+  updaters.push((dt, t) => realm.update(dt, t, env));
 
   updaters.push((dt) => {
     for (const w of waterfalls) {
@@ -860,6 +904,7 @@ export function buildWorld(scene, renderer) {
     vCloudMat.opacity = 0.12 + day * 0.3;
     // 洞府灵光夜间更亮
     caveGlow.material.opacity = 0.35 + night * 0.45;
+    env.day = day; env.night = night; env.dusk = dusk; env.sunAlt = sunAlt;
 
     window.__setDay = (v) => { dayTime = v; };
     return { dayTime, night, day, dusk, sunAlt };
@@ -867,6 +912,9 @@ export function buildWorld(scene, renderer) {
 
   return {
     terrainHeight,
+    landmarks: realm.landmarks,
+    dragon: realm.dragon,
+    phoenix: realm.phoenix,
     update(dt, t) {
       for (const f of updaters) f(dt, t);
       return updateDayNight(dt);

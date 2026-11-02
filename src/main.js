@@ -56,7 +56,7 @@ document.querySelector('.login-enter').addEventListener('click', doLogin);
 async function start() {
   const world = buildWorld(scene, renderer);
   await loginDone; // 等用户登录（世界已在后台渲染）
-  let spawn = new THREE.Vector3(0, 10, 8);
+  let spawn = new THREE.Vector3(46, 10, 76); // 青溪村出生点
   for (let r = 6; r < 60 && spawn.y <= WATER_LEVEL + 0.8; r += 4) {
     for (let a = 0; a < Math.PI * 2; a += 0.6) {
       const x = Math.cos(a) * r, z = Math.sin(a) * r;
@@ -79,6 +79,7 @@ async function start() {
     if (window.__game) window.__game.beasts = b;
   });
   window.__game = { scene, camera, player, beasts: null, world, THREE };
+  window.__setCam = (y, p) => { camYaw = y; if (p !== undefined) camPitch = p; };
 
   const cult = new Cultivation();
   const projectiles = new Projectiles(scene);
@@ -188,6 +189,16 @@ async function start() {
 
     hud.update(cult);
     hud.setTimeOfDay(dayNight.dayTime, SHICHEN, dayNight.day);
+    // 名胜发现提示
+    if (world.landmarks && (tick._lmT = (tick._lmT || 0) - dt) <= 0) {
+      tick._lmT = 0.5;
+      for (const L of world.landmarks) {
+        if (!L.seen && Math.hypot(player.position.x - L.x, player.position.z - L.z) < L.r) {
+          L.seen = true;
+          hud.showBanner(`发现 · ${L.name}`, 2400);
+        }
+      }
+    }
 
     updateCamera(dt);
     renderer.render(scene, camera);

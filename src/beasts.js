@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { clone as skeletonClone } from 'three/addons/utils/SkeletonUtils.js';
+import { buildSpiritFox, buildDeer, furTex as sharedFur } from './divine.js';
 
 const loader = new GLTFLoader();
 loader.setDRACOLoader(new DRACOLoader().setDecoderPath('draco/'));
@@ -9,12 +10,7 @@ function loadGLB(url) {
   return new Promise((res, rej) => loader.load(url, res, undefined, rej));
 }
 
-const furTex = (() => {
-  const t = new THREE.TextureLoader().load('textures/fur.jpg');
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  return t;
-})();
+const furTex = sharedFur;
 
 // ---------- 程序化灵兽（毛皮材质版） ----------
 function buildBeastBody(kind) {
@@ -22,31 +18,12 @@ function buildBeastBody(kind) {
   const fur = (c) => new THREE.MeshStandardMaterial({ map: furTex, color: c, roughness: 1 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x22262e, roughness: 1 });
 
-  if (kind === 'fox') {
-    const mat = fur(0xf4f6f8);
-    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.3, 0.75, 4, 10), mat);
-    body.rotation.x = Math.PI / 2; body.position.y = 0.5;
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 10), mat);
-    head.position.set(0, 0.72, 0.6);
-    const snout = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.28, 8), mat);
-    snout.rotation.x = Math.PI / 2; snout.position.set(0, 0.7, 0.88);
-    const ear = new THREE.ConeGeometry(0.08, 0.24, 6);
-    const earL = new THREE.Mesh(ear, dark); earL.position.set(-0.14, 0.95, 0.55);
-    const earR = new THREE.Mesh(ear, dark); earR.position.set(0.14, 0.95, 0.55);
-    // 九尾：三束尾羽
-    for (const off of [-0.15, 0, 0.15]) {
-      const tail = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.9, 7), mat);
-      tail.rotation.x = -Math.PI / 2.3;
-      tail.rotation.y = off;
-      tail.position.set(off, 0.65, -0.8);
-      g.add(tail);
-    }
-    const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.03, 6, 6),
-      new THREE.MeshBasicMaterial({ color: 0x66e0ff }));
-    eyeL.position.set(-0.09, 0.76, 0.8);
-    const eyeR = eyeL.clone(); eyeR.position.x = 0.09;
-    g.add(body, head, snout, earL, earR, eyeL, eyeR);
-  } else if (kind === 'wolf') {
+  if (kind === 'fox') return buildSpiritFox().group;
+  if (kind === 'deer') {
+    const d = buildDeer({ tags: false, scale: 0.75 });
+    return d.group;
+  }
+  if (kind === 'wolf') {
     const mat = fur(0xa6452e);
     const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.34, 0.9, 4, 10), mat);
     body.rotation.x = Math.PI / 2; body.position.y = 0.62;
@@ -85,6 +62,7 @@ function buildBeastBody(kind) {
 
 const GROUND_DEFS = [
   { name: '灵狐', kind: 'fox', exp: 40, stones: 2 },
+  { name: '白鹿', kind: 'deer', exp: 70, stones: 3 },
   { name: '玄龟', kind: 'turtle', exp: 60, stones: 3 },
   { name: '赤焰狼', kind: 'wolf', exp: 80, stones: 5 },
 ];
