@@ -10,13 +10,25 @@ export const REALMS = [
   { name: '大乘期', need: Infinity, aura: 0xfff3a0 },
 ];
 
+// 灵根被动加成
+export const LINGGEN = {
+  metal: { name: '金', swordMult: 1.2, spellMult: 1, pillMult: 1, meditateMult: 1, defenseMult: 1, desc: '剑术伤害 +20%' },
+  wood: { name: '木', swordMult: 1, spellMult: 1, pillMult: 1, meditateMult: 1.15, defenseMult: 1, desc: '打坐效率 +15%' },
+  water: { name: '水', swordMult: 1, spellMult: 1, pillMult: 1.3, meditateMult: 1, defenseMult: 1, desc: '丹药效果 +30%' },
+  fire: { name: '火', swordMult: 1, spellMult: 1.15, pillMult: 1, meditateMult: 1, defenseMult: 1, desc: '术法伤害 +15%' },
+  earth: { name: '土', swordMult: 1, spellMult: 1, pillMult: 1, meditateMult: 1, defenseMult: 0.85, desc: '受伤 -15%' },
+};
+
 export class Cultivation {
   constructor() {
     this.realmIndex = 0;
     this.exp = 0;          // exp within current realm
     this.spiritStones = 0;
     this.meditateRate = 12; // 修为/秒
+    this.linggen = null;   // LINGGEN 键
   }
+
+  get linggenMods() { return LINGGEN[this.linggen] || LINGGEN.metal; }
 
   get realm() { return REALMS[this.realmIndex]; }
   get isMax() { return this.realmIndex === REALMS.length - 1; }
@@ -36,7 +48,7 @@ export class Cultivation {
   }
 
   meditateTick(dt) {
-    return this.addExp(this.meditateRate * dt * (1 + this.realmIndex * 0.4));
+    return this.addExp(this.meditateRate * dt * (1 + this.realmIndex * 0.4) * this.linggenMods.meditateMult);
   }
 
   progress() {

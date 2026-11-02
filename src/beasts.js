@@ -60,12 +60,29 @@ function buildBeastBody(kind) {
   return g;
 }
 
+// hp 气血 / atk 每次扑击对玩家的伤害 / speed 追击速度 / flee: 受击逃逸（被动兽）
 const GROUND_DEFS = [
-  { name: '灵狐', kind: 'fox', exp: 40, stones: 2 },
-  { name: '白鹿', kind: 'deer', exp: 70, stones: 3 },
-  { name: '玄龟', kind: 'turtle', exp: 60, stones: 3 },
-  { name: '赤焰狼', kind: 'wolf', exp: 80, stones: 5 },
+  { name: '灵狐', kind: 'fox', exp: 40, stones: 2, hp: 60, atk: 6, fleeAt: 0.3, speed: 4.2,
+    drops: [['mat_fox_core', 0.6], ['mat_fox_fur', 0.4], ['pill_heal', 0.15]] },
+  { name: '白鹿', kind: 'deer', exp: 70, stones: 3, hp: 80, atk: 5, fleeAt: 0.4, speed: 4.6,
+    drops: [['mat_deer_antler', 0.55], ['pill_heal', 0.2]] },
+  { name: '玄龟', kind: 'turtle', exp: 60, stones: 3, hp: 160, atk: 4, fleeAt: 0, speed: 2.2,
+    drops: [['mat_turtle_shell', 0.7]] },
+  { name: '赤焰狼', kind: 'wolf', exp: 80, stones: 5, hp: 110, atk: 12, fleeAt: 0, speed: 4.8,
+    drops: [['mat_wolf_core', 0.65], ['mat_wolf_fang', 0.45], ['pill_exp', 0.15]] },
 ];
+
+// 掉落表掷签：返回 [{item:id}] + {stones:n}（stones 由 def.stones 固定给）
+function rollDrops(def) {
+  const out = [{ stones: def.stones }];
+  for (const [id, p] of def.drops || []) if (Math.random() < p) out.push({ item: id });
+  return out;
+}
+
+const HORSE_DEF = { name: '灵驹', exp: 70, stones: 4, hp: 80, atk: 5, fleeAt: 1, speed: 4.5, passive: true,
+  drops: [['mat_horse_mane', 0.6], ['pill_exp', 0.2]] };
+const BIRD_DEF = { name: '青鸾', exp: 90, stones: 6, hp: 70, atk: 8, fleeAt: 0, speed: 6,
+  drops: [['mat_bird_feather', 0.65], ['pill_exp', 0.2]] };
 
 export class BeastManager {
   static async create(scene, terrainHeight, count = 12) {
@@ -111,9 +128,10 @@ export class BeastManager {
       const mixer = new THREE.AnimationMixer(mesh);
       if (this.horseProto.animations.length) mixer.clipAction(this.horseProto.animations[0]).play();
       this.beasts.push({
-        mesh, mixer, def: { name: '灵驹', exp: 70, stones: 4 },
+        mesh, mixer, def: HORSE_DEF,
         alive: true, radius: 1.6, heading: Math.random() * Math.PI * 2,
         timer: Math.random() * 4, speed: 1.5, bob: Math.random() * 10, flyers: false,
+        hp: HORSE_DEF.hp, maxHp: HORSE_DEF.hp, state: 'wander', attackT: 0, lastHit: -99,
       });
       return;
     }
@@ -126,6 +144,7 @@ export class BeastManager {
       mesh, def, alive: true, radius: 1.3,
       heading: Math.random() * Math.PI * 2, timer: Math.random() * 4,
       speed: 1.2 + Math.random(), bob: Math.random() * 10, flyers: false,
+      hp: def.hp, maxHp: def.hp, state: 'wander', attackT: 0, lastHit: -99, fleeT: 0,
     });
   }
 
@@ -147,10 +166,11 @@ export class BeastManager {
     const mixer = new THREE.AnimationMixer(mesh);
     if (this.parrotProto.animations.length) mixer.clipAction(this.parrotProto.animations[0]).play();
     this.beasts.push({
-      mesh, mixer, def: { name: '青鸾', exp: 90, stones: 6 },
+      mesh, mixer, def: BIRD_DEF,
       alive: true, radius: 1.4, flyers: true,
       circle: { x: cx, z: cz, r: 30 + Math.random() * 25, y: 12 + Math.random() * 10, w: (0.15 + Math.random() * 0.1) * (Math.random() < 0.5 ? 1 : -1) },
       a: Math.random() * Math.PI * 2, bob: Math.random() * 10,
+      hp: BIRD_DEF.hp, maxHp: BIRD_DEF.hp, state: 'wander', attackT: 0, lastHit: -99,
     });
   }
 
@@ -159,7 +179,33 @@ export class BeastManager {
     for (let i = 0; i < 3; i++) this.spawnBird(0, 0);
   }
 
-  update(dt, playerPos, t) {
+  // ---------- 受击：返回 {amount, killed, def, drops} ----------
+  damage(b, amount, tag = '') {
+    if (!b.alive) return null;
+    const dealt = Math.min(b.hp, Math.max(1, Math.round(amount)));
+    b.hp -= dealt;
+    b.lastHit = performance.now() / 1000;
+    if (b.hp <= 0) {
+      const def = b.def;
+      b.alive = false;
+      this.scene.remove(b.mesh);
+      setTimeout(() => {
+        this.beasts = this.beasts.filter(x => x !== b);
+        this.spawnOne(b.mesh.position);
+      }, 6000);
+      return { amount: dealt, killed: true, def, drops: rollDrops(def) };
+    }
+    // 受击行为：被动/残血逃逸，否则追击
+    if (b.def.passive || (b.def.fleeAt > 0 && b.hp / b.maxHp < b.def.fleeAt)) {
+      b.state = 'flee';
+      b.fleeT = 8;
+    } else if (b.state === 'wander') {
+      b.state = 'chase';
+    }
+    return { amount: dealt, killed: false, def: b.def, drops: [] };
+  }
+
+  update(dt, playerPos, t, onPlayerHit) {
     for (const b of this.beasts) {
       if (!b.alive) continue;
       b.mixer?.update(dt);
@@ -167,6 +213,27 @@ export class BeastManager {
 
       if (b.flyers) {
         const c = b.circle;
+        // 青鸾被激怒时俯冲突袭
+        if (b.state === 'chase') {
+          b.attackT -= dt;
+          const to = new THREE.Vector3(playerPos.x - p.x, playerPos.y + 1.2 - p.y, playerPos.z - p.z);
+          const d = to.length();
+          if (d > 50) { b.state = 'wander'; }
+          else {
+            to.normalize();
+            p.addScaledVector(to, Math.min(b.def.speed * dt, d));
+            if (d < 2.2 && b.attackT <= 0) {
+              b.attackT = 1.6;
+              onPlayerHit?.(b.def.atk, b);
+            }
+            b.mesh.rotation.y = Math.atan2(to.x, to.z);
+            continue;
+          }
+        } else if (b.state === 'flee') {
+          b.fleeT -= dt;
+          c.y += dt * 6;
+          if (b.fleeT <= 0) b.state = 'wander';
+        }
         b.a += c.w * dt;
         p.set(c.x + Math.cos(b.a) * c.r, c.y + Math.sin(t + b.bob) * 1.5, c.z + Math.sin(b.a) * c.r);
         b.mesh.rotation.y = -b.a + (c.w > 0 ? Math.PI / 2 : -Math.PI / 2);
@@ -176,9 +243,34 @@ export class BeastManager {
       const dx = p.x - playerPos.x, dz = p.z - playerPos.z;
       const dist = Math.hypot(dx, dz);
       b.timer -= dt;
-      if (dist < 7) {
+      b.attackT -= dt;
+
+      if (b.state === 'flee') {
+        // 逃逸：背向远离
+        b.fleeT -= dt;
         b.heading = Math.atan2(dx, dz);
         b.speed = 4.5;
+        if (b.fleeT <= 0 || dist > 45) { b.state = 'wander'; b.timer = 2; }
+      } else if (b.state === 'chase' || b.state === 'attack') {
+        // 追击/扑咬
+        if (dist > 55) { b.state = 'wander'; b.timer = 1; }
+        else {
+          b.heading = Math.atan2(-dx, -dz);
+          if (dist > 1.9) {
+            b.state = 'chase';
+            b.speed = b.def.speed;
+          } else {
+            b.state = 'attack';
+            b.speed = 0;
+            if (b.attackT <= 0) {
+              b.attackT = 1.35;
+              onPlayerHit?.(b.def.atk, b);
+            }
+          }
+        }
+      } else if (dist < 7 && !b.def.passive) {
+        // 被动/和平兽靠近时才逃，攻击性灵兽不主动袭击（狩猎玩法）
+        b.speed = 1.2;
       } else {
         b.speed = 1.2;
         if (b.timer <= 0) {
@@ -196,14 +288,7 @@ export class BeastManager {
   }
 
   kill(b) {
-    if (!b.alive) return null;
-    b.alive = false;
-    this.scene.remove(b.mesh);
-    setTimeout(() => {
-      this.beasts = this.beasts.filter(x => x !== b);
-      this.spawnOne(b.mesh.position);
-    }, 6000);
-    return b.def;
+    return this.damage(b, b.hp || 1, 'kill')?.def ?? null;
   }
 
   get targets() { return this.beasts; }

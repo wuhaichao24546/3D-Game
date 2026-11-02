@@ -127,6 +127,41 @@ export class MeditationAura {
   }
 }
 
+// ---- 打坐经脉周天（穴位连线微光） ---------------------------------------------
+export class MeridianGlow {
+  constructor(scene) {
+    const N = 60;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3));
+    this.pts = new THREE.Points(geo, new THREE.PointsMaterial({
+      color: 0x9fe8ff, size: 0.14, transparent: true, opacity: 0.95, map: GLOW,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
+    this.pts.visible = false;
+    scene.add(this.pts);
+    this.N = N;
+    this.t = 0;
+  }
+
+  // 灵气流沿周身经络螺旋上行（任督循环的简化视效）
+  update(dt, active, center) {
+    this.pts.visible = active;
+    if (!active) return;
+    this.t += dt;
+    const p = this.pts.geometry.attributes.position;
+    for (let i = 0; i < this.N; i++) {
+      const phase = (i / this.N) + this.t * 0.45;
+      const k = phase % 1;                       // 0→1 上行
+      const a = k * Math.PI * 4 + this.t * 0.8;  // 双周螺旋
+      const r = 0.42 + Math.sin(k * Math.PI) * 0.14;
+      p.array[i * 3] = center.x + Math.cos(a) * r;
+      p.array[i * 3 + 1] = center.y + 0.25 + k * 1.5;
+      p.array[i * 3 + 2] = center.z + Math.sin(a) * r;
+    }
+    p.needsUpdate = true;
+  }
+}
+
 // ---- breakthrough shockwave ring -------------------------------------------
 export class BreakthroughRing {
   constructor(scene) {

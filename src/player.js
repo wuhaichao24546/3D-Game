@@ -178,6 +178,52 @@ export class Player {
     this.walkPhase = 0;
     this.spawn = spawn.clone();
     this.meditateT = 0;
+
+    // 气血 / 护盾 / 受击
+    this.maxHp = 100;
+    this.hp = 100;
+    this.hpRegen = 1.2;          // 气血/秒（缓回）
+    this.shield = null;          // {until, absorb} 罡气
+    this.invulnT = 0;            // 受击无敌帧
+    this.lastHurt = -99;
+    this.defenseMult = 1;        // 土灵根减伤
+    this.onHurt = null;          // (dealt)=>void HUD 反馈
+    this.onDeath = null;         // ()=>void 重伤遁返
+  }
+
+  get alive() { return this.hp > 0; }
+
+  takeDamage(dmg) {
+    const now = performance.now() / 1000;
+    if (!this.alive || now < this.invulnT) return 0;
+    if (this.shield && now < this.shield.until) {
+      const absorbed = Math.min(this.shield.absorb, dmg);
+      this.shield.absorb -= absorbed;
+      dmg -= absorbed;
+      if (this.shield.absorb <= 0) this.shield = null;
+    }
+    const dealt = Math.max(0, Math.round(dmg * this.defenseMult));
+    if (dealt <= 0) { this.onHurt?.(0); return 0; }
+    this.hp -= dealt;
+    this.invulnT = now + 0.5;
+    this.lastHurt = now;
+    this.onHurt?.(dealt);
+    if (this.hp <= 0) { this.hp = 0; this.onDeath?.(); }
+    return dealt;
+  }
+
+  heal(n) {
+    this.hp = Math.min(this.maxHp, this.hp + Math.max(0, Math.round(n)));
+  }
+
+  // 重伤遁返：回到出生点、部分恢复
+  respawn() {
+    this.mesh.position.copy(this.spawn);
+    this.hp = Math.max(this.maxHp * 0.5, this.hp + 40);
+    this.vel.set(0, 0, 0);
+    this.flying = false;
+    this.meditating = false;
+    this.invulnT = performance.now() / 1000 + 3;
   }
 
   get position() { return this.mesh.position; }
@@ -260,6 +306,12 @@ export class Player {
   update(dt, input, camYaw) {
     const p = this.mesh.position;
     const ground = this.terrainHeight(p.x, p.z);
+
+    // 气血缓回（不战斗时）
+    if (this.alive && this.hp < this.maxHp && performance.now() / 1000 - this.lastHurt > 8) {
+      this.hp = Math.min(this.maxHp, this.hp + this.hpRegen * dt);
+    }
+    if (this.shield && performance.now() / 1000 > this.shield.until) this.shield = null;
 
     if (this.meditating) {
       this.vel.set(0, 0, 0);

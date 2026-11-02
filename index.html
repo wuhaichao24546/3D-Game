@@ -16,7 +16,19 @@
     <form id="login-form" autocomplete="off">
       <input id="login-user" type="text" placeholder="道号" />
       <input id="login-pass" type="password" placeholder="密令" />
+      <div id="linggen-row">
+        <span class="lg-hint">灵根</span>
+        <button type="button" class="lg-pick" data-g="metal">金</button>
+        <button type="button" class="lg-pick" data-g="wood">木</button>
+        <button type="button" class="lg-pick" data-g="water">水</button>
+        <button type="button" class="lg-pick" data-g="fire">火</button>
+        <button type="button" class="lg-pick" data-g="earth">土</button>
+      </div>
       <button type="submit" id="login-btn">踏上仙途</button>
+      <div id="login-save" class="hidden">
+        <button type="button" id="login-continue">继续修行</button>
+        <button type="button" id="login-rebirth">重入轮回</button>
+      </div>
       <div id="login-err"></div>
     </form>
     <div class="login-charm left">符</div>
@@ -37,12 +49,30 @@
   <div id="hud">
     <div id="status-panel">
       <div id="realm-name">练气期 · 一层</div>
+      <div id="linggen-tag"></div>
       <div id="exp-bar-wrap">
         <div id="exp-bar"></div>
         <span id="exp-text">0 / 100</span>
       </div>
+      <div id="hp-bar-wrap">
+        <div id="hp-bar"></div>
+        <span id="hp-text">气血 100/100</span>
+      </div>
+      <div id="mana-bar-wrap">
+        <div id="mana-bar"></div>
+        <span id="mana-text">真元 100/100</span>
+      </div>
       <div id="spirit-stones">灵石 × 0</div>
       <div id="time-of-day">☀ 辰时</div>
+    </div>
+
+    <div id="quickbar"></div>
+    <div id="beast-overlay"></div>
+    <div id="floaters"></div>
+    <div id="hurt-vignette"></div>
+    <div id="inventory" class="hidden">
+      <div class="inv-title">行囊 <span class="inv-key">B 关闭</span></div>
+      <div id="inv-grid"></div>
     </div>
 
     <div id="controls-hint">
@@ -55,6 +85,9 @@
       <span>F 御剑飞行</span>
       <span>Z 打坐修炼</span>
       <span>左键 剑气</span>
+      <span>1-4 技能</span>
+      <span>5/6 丹药</span>
+      <span>B 行囊</span>
     </div>
 
     <div id="crosshair">·</div>
