@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { glowTexture } from './world.js';
+import { GRADES } from './gear.js';
 
 const GLOW = glowTexture();
 
@@ -68,19 +69,20 @@ export class Pickups {
     this.geo = new THREE.OctahedronGeometry(0.22, 0);
   }
 
-  // drop: {item: id} 或 {stones: n}
+  // drop: {item: id} / {stones: n} / {equip: eq}
   spawn(pos, drop) {
-    const kind = drop.item ? ITEMS[drop.item].kind : 'stones';
+    const kind = drop.item ? ITEMS[drop.item].kind : (drop.equip ? 'equip' : 'stones');
+    const color = drop.equip ? GRADES[drop.equip.grade].color : (DROP_COLORS[kind] || 0xffffff);
     const mat = new THREE.MeshBasicMaterial({
-      color: DROP_COLORS[kind] || 0xffffff, transparent: true, opacity: 0.95,
+      color, transparent: true, opacity: 0.95,
       blending: THREE.AdditiveBlending, depthWrite: false,
     });
     const m = new THREE.Mesh(this.geo, mat);
     const halo = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: GLOW, color: DROP_COLORS[kind], transparent: true, opacity: 0.5,
+      map: GLOW, color, transparent: true, opacity: drop.equip ? 0.75 : 0.5,
       blending: THREE.AdditiveBlending, depthWrite: false,
     }));
-    halo.scale.setScalar(0.9);
+    halo.scale.setScalar(drop.equip ? 1.3 : 0.9);
     m.add(halo);
     m.position.set(
       pos.x + (Math.random() - 0.5) * 1.6,

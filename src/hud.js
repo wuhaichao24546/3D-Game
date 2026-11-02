@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { ITEMS } from './items.js';
+import { GRADES } from './gear.js';
 
 const _v = new THREE.Vector3();
 
@@ -23,6 +24,7 @@ export class HUD {
     this.hurtVignette = document.getElementById('hurt-vignette');
     this.invPanel = document.getElementById('inventory');
     this.invGrid = document.getElementById('inv-grid');
+    this.gearSlotsEl = document.getElementById('gear-slots');
     this._bannerTimer = null;
     this._lastShichen = -1;
     this._beastTags = new Map(); // beast -> {el,hpFill}
@@ -93,8 +95,8 @@ export class HUD {
     }
   }
 
-  // ---------- 灵兽血条 ----------
-  updateBeastBars(beasts, camera) {
+  // ---------- 灵兽血条（带道行等级） ----------
+  updateBeastBars(beasts, camera, playerLv = 5) {
     const seen = new Set();
     for (const b of beasts) {
       if (!b.alive || (b.state === 'wander' && performance.now() / 1000 - (b.lastHit || -99) > 9)) continue;
@@ -104,11 +106,14 @@ export class HUD {
         const el = document.createElement('div');
         el.className = 'beast-tag';
         el.innerHTML = `<span class="b-name"></span><span class="b-hp"><i></i></span>`;
-        el.querySelector('.b-name').textContent = b.def.name;
         this.beastOverlay.appendChild(el);
-        tag = { el, fill: el.querySelector('.b-hp i') };
+        tag = { el, nameEl: el.querySelector('.b-name'), fill: el.querySelector('.b-hp i') };
         this._beastTags.set(b, tag);
       }
+      const gap = (b.lv || 5) - playerLv;
+      const cls = gap >= 9 ? 'lv-high' : gap <= -9 ? 'lv-low' : '';
+      if (tag.lvCls !== cls) { tag.el.classList.remove('lv-high', 'lv-low'); if (cls) tag.el.classList.add(cls); tag.lvCls = cls; }
+      tag.nameEl.textContent = `${b.def.name} · Lv${b.lv}`;
       _v.copy(b.mesh.position).y += (b.def.kind === 'turtle' ? 1.0 : 1.5);
       _v.project(camera);
       if (_v.z > 1) { tag.el.style.display = 'none'; continue; }
@@ -145,21 +150,40 @@ export class HUD {
   }
 
   // ---------- 背包 ----------
-  toggleInventory(inv, onUse) {
+  toggleInventory(inv, onUse, gear, onGear) {
     this._invOpen = !this._invOpen;
     this.invPanel.classList.toggle('hidden', !this._invOpen);
-    if (this._invOpen) this.renderInventory(inv, onUse);
+    if (this._invOpen) this.renderInventory(inv, onUse, gear, onGear);
     return this._invOpen;
   }
   get invOpen() { return this._invOpen; }
 
-  renderInventory(inv, onUse) {
+  // 装备槽 + 装备囊渲染
+  renderGear(gear, onGear) {
+    this.gearSlotsEl.innerHTML = '';
+    const slotName = { sword: '佩剑', robe: '法袍', charm: '玉佩' };
+    for (const slot of ['sword', 'robe', 'charm']) {
+      const eq = gear.slots[slot];
+      const el = document.createElement('div');
+      el.className = 'gear-slot';
+      if (eq) {
+        const g = GRADES[eq.grade];
+        el.style.borderColor = g.css;
+        el.innerHTML = `<div class="gs-kind">${slotName[slot]}</div><div class="gs-name" style="color:${g.css}">${eq.name}</div>`;
+        el.title = eq.desc + '（点击卸下）';
+        el.addEventListener('click', () => onGear('unequip', slot));
+      } else {
+        el.classList.add('empty');
+        el.innerHTML = `<div class="gs-kind">${slotName[slot]}</div><div class="gs-name">—</div>`;
+      }
+      this.gearSlotsEl.appendChild(el);
+    }
+  }
+
+  renderInventory(inv, onUse, gear, onGear) {
+    if (gear) this.renderGear(gear, onGear);
     this.invGrid.innerHTML = '';
     const list = inv.list();
-    if (!list.length) {
-      this.invGrid.innerHTML = '<div class="inv-empty">行囊空空如也 —— 猎兽、采集可获材料与丹药</div>';
-      return;
-    }
     const kindName = { pill: '丹药', material: '材料' };
     for (const { id, def, n } of list) {
       const cell = document.createElement('div');
@@ -168,6 +192,22 @@ export class HUD {
       cell.title = def.desc || '';
       if (def.kind === 'pill') cell.addEventListener('click', () => onUse(id));
       this.invGrid.appendChild(cell);
+    }
+    if (gear) {
+      for (const eq of gear.bag) {
+        const g = GRADES[eq.grade];
+        const cell = document.createElement('div');
+        cell.className = 'inv-cell equip';
+        cell.style.borderColor = g.css;
+        cell.innerHTML = `<span class="ic-n" style="color:${g.css}">◆</span>` +
+          `<div class="ic-name" style="color:${g.css}">${eq.name}</div><div class="ic-kind">${eq.desc}</div>`;
+        cell.title = eq.desc + '（点击穿戴）';
+        cell.addEventListener('click', () => onGear('equip', eq.uid));
+        this.invGrid.appendChild(cell);
+      }
+    }
+    if (!list.length && !(gear && gear.bag.length)) {
+      this.invGrid.innerHTML = '<div class="inv-empty">行囊空空如也 —— 猎兽、采集可获材料丹药装备</div>';
     }
   }
 

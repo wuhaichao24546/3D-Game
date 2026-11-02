@@ -362,3 +362,22 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0a1210; }
   backdrop-filter: blur(4px);
 }
 #quality-btn:hover { background: rgba(20, 40, 44, 0.75); border-color: #8fd8c8; }
+
+/* ---------- 装备槽 + 等级血条 + 战斗飘字扩展 ---------- */
+#gear-slots { display: flex; gap: 8px; margin-bottom: 10px; }
+.gear-slot {
+  flex: 1; min-width: 0; padding: 6px 8px; border-radius: 6px; cursor: pointer;
+  border: 1px solid rgba(140, 220, 200, 0.35); background: rgba(10, 24, 22, 0.5);
+}
+.gear-slot.empty { opacity: 0.45; cursor: default; }
+.gear-slot .gs-kind { font-size: 10px; color: #8fd8b8; }
+.gear-slot .gs-name { font-size: 11px; color: #e8f5e9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.inv-cell.equip { cursor: pointer; }
+.inv-cell.equip:hover { background: rgba(50, 60, 50, 0.55); }
+.beast-tag.lv-high .b-name { color: #ff9a8a; }
+.beast-tag.lv-low .b-name { color: #a8b8b0; }
+.floater.crit { color: #ffd97a; font-size: 17px; font-weight: 700; }
+.floater.block { color: #b8c8d8; font-size: 12px; }
+.floater.resist { color: #a8c8e8; font-size: 12px; }
+.floater.crush { color: #ff6a5a; font-size: 15px; font-weight: 700; }
+.floater.equip { color: #ffd97a; font-size: 13px; }

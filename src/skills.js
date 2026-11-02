@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { glowTexture } from './world.js';
+import { calcDamage } from './combat.js';
 
 const GLOW = glowTexture();
 const ADD = (color, opacity = 0.85) => new THREE.MeshBasicMaterial({
@@ -54,7 +55,7 @@ export class Skills {
   // ---- 1 剑雨：目标点范围落剑 ----
   cast1(ctx) {
     const target = aimPoint(ctx, 34);
-    const dmg = 46 * ctx.linggen.swordMult * ctx.linggen.spellMult;
+    const dmg = ctx.stats.atk * 1.6 * ctx.linggen.swordMult;
     const group = new THREE.Group();
     const blades = [];
     for (let i = 0; i < 12; i++) {
@@ -88,7 +89,7 @@ export class Skills {
   // ---- 2 雷符：天降雷柱 ----
   cast2(ctx) {
     const target = aimPoint(ctx, 36);
-    const dmg = 58 * ctx.linggen.spellMult;
+    const dmg = ctx.stats.sp * 1.5 * ctx.linggen.spellMult;
     const bolt = new THREE.Mesh(
       new THREE.CylinderGeometry(0.12, 0.3, 24, 6, 1, true),
       ADD(0xd8e8ff, 0.9));
@@ -210,15 +211,18 @@ function aimPoint(ctx, range = 34) {
   return origin.clone().addScaledVector(dir, Math.min(range, 20));
 }
 
-// ---------- 范围伤害 ----------
-function damageArea(ctx, center, radius, dmg, tag) {
+// ---------- 范围伤害（过防御 + 道行差 + 暴击） ----------
+function damageArea(ctx, center, radius, raw, tag) {
   for (const b of ctx.beasts.targets) {
     if (!b.alive) continue;
     const d = b.mesh.position.distanceTo(center);
     if (d > radius + b.radius) continue;
-    const res = ctx.beasts.damage(b, dmg, tag);
+    const c = calcDamage(raw, ctx.lv(), b.lv, b.stats.def, ctx.stats.crit);
+    const res = ctx.beasts.damage(b, c.dealt, tag);
     if (res) {
-      ctx.hud.floater(b.mesh.position, `-${Math.round(res.amount)}`, 'hit');
+      if (c.note === 'block') ctx.hud.floater(b.mesh.position, `无法破防 -${res.amount}`, 'block');
+      else if (c.note === 'resist') ctx.hud.floater(b.mesh.position, `-${res.amount} 护体`, 'resist');
+      else ctx.hud.floater(b.mesh.position, `-${res.amount}`, c.crit ? 'crit' : 'hit');
       if (res.killed) ctx.onKill(b, res);
     }
   }

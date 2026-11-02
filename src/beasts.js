@@ -3,6 +3,8 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { clone as skeletonClone } from 'three/addons/utils/SkeletonUtils.js';
 import { buildSpiritFox, buildDeer, furTex as sharedFur } from './divine.js';
+import { beastStats } from './combat.js';
+import { genEquip } from './gear.js';
 
 const loader = new GLTFLoader();
 loader.setDRACOLoader(new DRACOLoader().setDecoderPath('draco/'));
@@ -72,10 +74,11 @@ const GROUND_DEFS = [
     drops: [['mat_wolf_core', 0.65], ['mat_wolf_fang', 0.45], ['pill_exp', 0.15]] },
 ];
 
-// 掉落表掷签：返回 [{item:id}] + {stones:n}（stones 由 def.stones 固定给）
-function rollDrops(def) {
-  const out = [{ stones: def.stones }];
-  for (const [id, p] of def.drops || []) if (Math.random() < p) out.push({ item: id });
+// 掉落表掷签：返回 [{item:id}|{equip}|{stones:n}]；数值随怪等级缩放
+function rollDrops(b) {
+  const out = [{ stones: b.stats.stones }];
+  for (const [id, p] of b.def.drops || []) if (Math.random() < p) out.push({ item: id });
+  if (Math.random() < 0.35) out.push({ equip: genEquip(b.lv) }); // 装备爆率 35%
   return out;
 }
 
@@ -101,6 +104,11 @@ export class BeastManager {
     this.terrainHeight = terrainHeight;
     this.beasts = [];
     this.count = count;
+    this.playerLevel = () => 5; // main 注入：怪物按玩家道行定级
+  }
+
+  rollLevel() {
+    return Math.max(1, this.playerLevel() + Math.floor(Math.random() * 8) - 3);
   }
 
   findLand(cx, cz, range = 160) {
@@ -133,11 +141,13 @@ export class BeastManager {
       this.scene.add(mesh);
       const mixer = new THREE.AnimationMixer(mesh);
       if (this.horseProto.animations.length) mixer.clipAction(this.horseProto.animations[0]).play();
+      const lv = this.rollLevel();
+      const stats = beastStats(HORSE_DEF, lv);
       this.beasts.push({
-        mesh, mixer, def: HORSE_DEF,
+        mesh, mixer, def: HORSE_DEF, lv, stats,
         alive: true, radius: 1.6, heading: Math.random() * Math.PI * 2,
         timer: Math.random() * 4, speed: 1.5, bob: Math.random() * 10, flyers: false,
-        hp: HORSE_DEF.hp, maxHp: HORSE_DEF.hp, state: 'wander', attackT: 0, lastHit: -99,
+        hp: stats.hp, maxHp: stats.hp, state: 'wander', attackT: 0, lastHit: -99,
       });
       return;
     }
@@ -146,11 +156,13 @@ export class BeastManager {
     const { x, z, h } = this.findLand(center.x, center.z);
     mesh.position.set(x, h, z);
     this.scene.add(mesh);
+    const lv = this.rollLevel();
+    const stats = beastStats(def, lv);
     this.beasts.push({
-      mesh, def, alive: true, radius: 1.3,
+      mesh, def, lv, stats, alive: true, radius: 1.3,
       heading: Math.random() * Math.PI * 2, timer: Math.random() * 4,
       speed: 1.2 + Math.random(), bob: Math.random() * 10, flyers: false,
-      hp: def.hp, maxHp: def.hp, state: 'wander', attackT: 0, lastHit: -99, fleeT: 0,
+      hp: stats.hp, maxHp: stats.hp, state: 'wander', attackT: 0, lastHit: -99, fleeT: 0,
     });
   }
 
@@ -171,12 +183,14 @@ export class BeastManager {
     this.scene.add(mesh);
     const mixer = new THREE.AnimationMixer(mesh);
     if (this.parrotProto.animations.length) mixer.clipAction(this.parrotProto.animations[0]).play();
+    const lv = this.rollLevel();
+    const stats = beastStats(BIRD_DEF, lv);
     this.beasts.push({
-      mesh, mixer, def: BIRD_DEF,
+      mesh, mixer, def: BIRD_DEF, lv, stats,
       alive: true, radius: 1.4, flyers: true,
       circle: { x: cx, z: cz, r: 30 + Math.random() * 25, y: 12 + Math.random() * 10, w: (0.15 + Math.random() * 0.1) * (Math.random() < 0.5 ? 1 : -1) },
       a: Math.random() * Math.PI * 2, bob: Math.random() * 10,
-      hp: BIRD_DEF.hp, maxHp: BIRD_DEF.hp, state: 'wander', attackT: 0, lastHit: -99,
+      hp: stats.hp, maxHp: stats.hp, state: 'wander', attackT: 0, lastHit: -99,
     });
   }
 
@@ -199,7 +213,7 @@ export class BeastManager {
         this.beasts = this.beasts.filter(x => x !== b);
         this.spawnOne(b.mesh.position);
       }, 6000);
-      return { amount: dealt, killed: true, def, drops: rollDrops(def) };
+      return { amount: dealt, killed: true, def, exp: b.stats.exp, drops: rollDrops(b) };
     }
     // 受击行为：被动/残血逃逸，否则追击
     if (b.def.passive || (b.def.fleeAt > 0 && b.hp / b.maxHp < b.def.fleeAt)) {
@@ -230,7 +244,7 @@ export class BeastManager {
             p.addScaledVector(to, Math.min(b.def.speed * dt, d));
             if (d < 2.2 && b.attackT <= 0) {
               b.attackT = 1.6;
-              onPlayerHit?.(b.def.atk, b);
+              onPlayerHit?.(b.stats.atk, b);
             }
             b.mesh.rotation.y = Math.atan2(to.x, to.z);
             continue;
@@ -270,7 +284,7 @@ export class BeastManager {
             b.speed = 0;
             if (b.attackT <= 0) {
               b.attackT = 1.35;
-              onPlayerHit?.(b.def.atk, b);
+              onPlayerHit?.(b.stats.atk, b);
             }
           }
         }

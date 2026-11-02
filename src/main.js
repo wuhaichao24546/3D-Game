@@ -11,9 +11,11 @@ import { Cultivation, LINGGEN } from './cultivation.js';
 import { BeastManager } from './beasts.js';
 import { Projectiles, Bursts, MeditationAura, BreakthroughRing, MeridianGlow } from './effects.js';
 import { HUD } from './hud.js';
-import { Inventory, Pickups } from './items.js';
+import { Inventory, Pickups, ITEMS } from './items.js';
 import { Skills, SKILL_DEFS } from './skills.js';
 import { loadSave, hasSave, clearSave, writeSave } from './save.js';
+import { daoLevel, playerStats, calcDamage } from './combat.js';
+import { Gear, GRADES } from './gear.js';
 
 // ---------- renderer / scene ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -122,6 +124,7 @@ async function start() {
 
   let beasts = null;
   BeastManager.create(scene, terrainHeight, 12).then((b) => {
+    b.playerLevel = () => lv;
     b.populate(spawn);
     beasts = b;
     if (window.__game) window.__game.beasts = b;
@@ -178,9 +181,23 @@ async function start() {
   const inventory = new Inventory();
   const pickups = new Pickups(scene, terrainHeight);
   const skills = new Skills(scene);
+  const gear = new Gear();
 
-  // 灵根被动：土减伤
-  player.defenseMult = cult.linggenMods.defenseMult;
+  // 面板重算：境界/装备变化后调用
+  let lv = 1, stats = null;
+  function recalc() {
+    lv = daoLevel(cult);
+    stats = playerStats(lv, gear.totals(), cult.linggenMods);
+    const hpK = player.hp / player.maxHp;
+    player.maxHp = stats.maxHp;
+    player.hp = Math.max(1, Math.min(player.maxHp, Math.max(player.hp, Math.round(player.maxHp * hpK))));
+    skills.maxMana = stats.maxMana;
+    skills.mana = Math.min(skills.mana, skills.maxMana);
+    player.defenseMult = stats.hurtMult;
+  }
+
+  // 灵根被动：土减伤（面板内已含）
+  recalc();
   hud.setLinggen(cult.linggen, cult.linggenMods.name + '灵根 · ' + cult.linggenMods.desc);
 
   // 恢复存档
@@ -191,6 +208,8 @@ async function start() {
       cult.exp = s.exp || 0;
       cult.spiritStones = s.spiritStones || 0;
       inventory.fromJSON(s.inv || []);
+      gear.fromJSON(s.gear);
+      recalc();
       player.hp = Math.max(1, Math.min(player.maxHp, s.hp || player.maxHp));
       skills.mana = Math.min(skills.maxMana, s.mana || skills.maxMana);
       if (s.pos) player.position.set(s.pos[0], s.pos[1], s.pos[2]);
@@ -202,6 +221,8 @@ async function start() {
   window.__game.inventory = inventory;
   window.__game.skills = skills;
   window.__game.cult = cult;
+  window.__game.gear = gear;
+  window.__game.stats = () => stats;
 
   const pillCtx = {
     heal: (n) => player.heal(n),
@@ -211,10 +232,32 @@ async function start() {
   function usePill(id) {
     if (inventory.use(id, pillCtx)) {
       hud.showBanner('服下丹药', 1000);
-      if (hud.invOpen) hud.renderInventory(inventory, usePill);
+      if (hud.invOpen) hud.renderInventory(inventory, usePill, gear, onGear);
     } else {
       hud.showBanner('行囊中没有此丹药', 1000);
     }
+  }
+
+  // 穿/卸装备
+  function onGear(action, arg) {
+    let eq = null;
+    if (action === 'equip') eq = gear.equip(arg);
+    else if (action === 'unequip') eq = gear.unequip(arg);
+    if (!eq) return;
+    recalc();
+    refreshSwordLook();
+    hud.showBanner(action === 'equip' ? `装备 · ${eq.name}` : `卸下 · ${eq.name}`, 1200);
+    hud.renderInventory(inventory, usePill, gear, onGear);
+  }
+
+  // 背剑颜色随佩剑品阶
+  function refreshSwordLook() {
+    const blade = player.swordMesh?.children[0];
+    if (!blade) return;
+    const eq = gear.slots.sword;
+    blade.material.color.setHex(eq ? GRADES[eq.grade].color : 0xbfd6d2);
+    blade.material.emissive?.setHex(eq ? GRADES[eq.grade].color : 0x000000);
+    if (blade.material.emissive) blade.material.emissiveIntensity = eq ? 0.25 + eq.grade * 0.18 : 0;
   }
   player.onHurt = () => hud.hurt();
   player.onDeath = () => {
@@ -225,8 +268,8 @@ async function start() {
 
   function onBeastKilled(b, res) {
     const def = res.def;
-    const broke = cult.addExp(def.exp);
-    hud.floater(b.mesh.position, `+${def.exp} 修为`, 'gain');
+    const broke = cult.addExp(Math.round(res.exp * stats.expMult));
+    hud.floater(b.mesh.position, `+${Math.round(res.exp * stats.expMult)} 修为`, 'gain');
     bursts.spawn(b.mesh.position, 0xaef0c8, 40, 7);
     pickups.spawnDrops(b.mesh.position, res.drops);
     if (broke) breakthrough(broke);
@@ -236,6 +279,8 @@ async function start() {
     scene, camera, player, hud, terrainHeight, bursts, inventory,
     linggen: cult.linggenMods,
     addExp: pillCtx.addExp,
+    get stats() { return stats; },
+    lv: () => lv,
     get beasts() { return beasts; },
     onKill: onBeastKilled,
   };
@@ -253,6 +298,7 @@ async function start() {
       mana: skills.mana,
       pos: [player.position.x, player.position.y, player.position.z],
       inv: inventory.toJSON(),
+      gear: gear.toJSON(),
     });
   }
   setInterval(persist, 30000);
@@ -272,7 +318,7 @@ async function start() {
     else if (e.code === 'KeyF') { player.toggleFly(); hud.showBanner(player.flying ? '御剑而行' : '收剑而立', 1200); }
     else if (e.code === 'KeyZ') { player.toggleMeditate(); hud.showBanner(player.meditating ? '入定修炼' : '出定', 1200); }
     else if (e.code === 'KeyB') {
-      const open = hud.toggleInventory(inventory, usePill);
+      const open = hud.toggleInventory(inventory, usePill, gear, onGear);
       if (open) document.exitPointerLock?.();
       else renderer.domElement.requestPointerLock?.();
     } else {
@@ -336,6 +382,7 @@ async function start() {
   let firstFrame = true;
 
   function breakthrough(realms) {
+    recalc(); // 境界提升后面板重算
     ring.trigger(player.position);
     bursts.spawn(player.position.clone().add(new THREE.Vector3(0, 1.2, 0)), cult.realm.aura, 90, 9);
     hud.showBanner(`突破 · ${realms[realms.length - 1]}！`, 3200);
@@ -362,13 +409,20 @@ async function start() {
     player.update(dt, input, camYaw);
     beasts?.update(dt, player.position, t, (dmg, b) => {
       if (!player.alive) return;
-      const dealt = player.takeDamage(dmg);
-      if (dealt > 0) hud.floater(player.position, `-${dealt}`, 'hurt');
+      // 怪物攻击过伤害引擎：玩家防御 + 境界差（碾压/不破防）
+      const c = calcDamage(dmg, b.lv, lv, stats.def, 0.03);
+      const dealt = player.takeDamage(c.dealt);
+      if (c.note === 'block') hud.floater(player.position, '妖兽无法破防', 'block');
+      else if (c.note === 'crush') hud.floater(player.position, `境界碾压 -${dealt}`, 'crush');
+      else if (dealt > 0) hud.floater(player.position, `-${dealt}`, 'hurt');
     });
     projectiles.update(dt, beasts?.targets || [], (beast) => {
-      const res = beasts.damage(beast, 20 * cult.linggenMods.swordMult, '剑气');
+      const c = calcDamage(stats.atk * stats.swordMult, lv, beast.lv, beast.stats.def, stats.crit);
+      const res = beasts.damage(beast, c.dealt, '剑气');
       if (res) {
-        hud.floater(beast.mesh.position, `-${res.amount}`, 'hit');
+        if (c.note === 'block') hud.floater(beast.mesh.position, `无法破防 -${res.amount}`, 'block');
+        else if (c.note === 'resist') hud.floater(beast.mesh.position, `-${res.amount} 护体`, 'resist');
+        else hud.floater(beast.mesh.position, `-${res.amount}`, c.crit ? 'crit' : 'hit');
         if (res.killed) onBeastKilled(beast, res);
       }
     });
@@ -380,7 +434,11 @@ async function start() {
         hud.floater(player.position, `灵石 +${d.stones}`, 'gain');
       } else if (d.item) {
         inventory.add(d.item, 1);
-        hud.floater(player.position, `拾取 ${d.item}`, 'gain');
+        hud.floater(player.position, `拾取 ${ITEMS[d.item].name}`, 'gain');
+      } else if (d.equip) {
+        gear.add(d.equip);
+        hud.floater(player.position, `获得 ${d.equip.name}`, 'equip');
+        if (hud.invOpen) hud.renderInventory(inventory, usePill, gear, onGear);
       }
     });
     medAura.update(dt, player.meditating, player.position);
@@ -398,7 +456,7 @@ async function start() {
     hud.update(cult);
     hud.setVitals(player.hp, player.maxHp, skills.mana, skills.maxMana);
     hud.updateQuickbar(SKILL_DEFS.map((_, i) => skills.cooldowns[i] || 0), skills.mana, SKILL_DEFS);
-    if (beasts) hud.updateBeastBars(beasts.targets, camera);
+    if (beasts) hud.updateBeastBars(beasts.targets, camera, lv);
     hud.setTimeOfDay(dayNight.dayTime, SHICHEN, dayNight.day);
     // 名胜发现提示
     if (world.landmarks && (tick._lmT = (tick._lmT || 0) - dt) <= 0) {
