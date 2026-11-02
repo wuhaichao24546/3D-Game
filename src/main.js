@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { DefaultLoadingManager } from 'three';
 import './style.css';
 import { buildWorld, terrainHeight, WATER_LEVEL, SHICHEN } from './world.js';
 import { Player } from './player.js';
@@ -20,6 +21,12 @@ const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 40
 
 const hud = new HUD();
 const loadingEl = document.getElementById('loading');
+// 加载进度
+let progDone = 0, progTotal = 0;
+DefaultLoadingManager.onProgress = (_u, done, total) => {
+  progDone = done; progTotal = total;
+  loadingEl.textContent = `仙气汇聚中 · ${Math.round(done / Math.max(total, 1) * 100)}%`;
+};
 
 async function start() {
   const world = buildWorld(scene, renderer);
@@ -33,13 +40,18 @@ async function start() {
     }
   }
 
-  const [player, beasts] = await Promise.all([
-    Player.create(scene, terrainHeight, spawn),
-    BeastManager.create(scene, terrainHeight, 12),
-  ]);
-  beasts.populate(spawn);
+  // 分层加载：世界先渲染，主角就绪即开玩，灵兽后台加载
+  loadingEl.textContent = '仙气汇聚中 · 载入修士…';
+  const player = await Player.create(scene, terrainHeight, spawn);
   loadingEl.style.display = 'none';
-  window.__game = { scene, camera, player, beasts, world, THREE };
+
+  let beasts = null;
+  BeastManager.create(scene, terrainHeight, 12).then((b) => {
+    b.populate(spawn);
+    beasts = b;
+    if (window.__game) window.__game.beasts = b;
+  });
+  window.__game = { scene, camera, player, beasts: null, world, THREE };
 
   const cult = new Cultivation();
   const projectiles = new Projectiles(scene);
@@ -124,8 +136,8 @@ async function start() {
 
     const dayNight = world.update(dt, t);
     player.update(dt, input, camYaw);
-    beasts.update(dt, player.position, t);
-    projectiles.update(dt, beasts.targets, (beast) => {
+    beasts?.update(dt, player.position, t);
+    projectiles.update(dt, beasts?.targets || [], (beast) => {
       const def = beasts.kill(beast);
       if (def) {
         cult.spiritStones += def.stones;

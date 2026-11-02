@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { clone as skeletonClone } from 'three/addons/utils/SkeletonUtils.js';
 
 const loader = new GLTFLoader();
+loader.setDRACOLoader(new DRACOLoader().setDecoderPath('draco/'));
 function loadGLB(url) {
   return new Promise((res, rej) => loader.load(url, res, undefined, rej));
 }
