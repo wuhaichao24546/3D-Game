@@ -32,36 +32,64 @@ function buildFlySword() {
   return g;
 }
 
-function buildAccessories(robeMat) {
+// 姿态欧拉约定：手臂 x=前后摆(负为后)、z=下垂；前臂 y=屈肘；腿 x 负为前抬、小腿 x 正为屈膝；映射到 Mixamo T-pose 骨骼局部轴
+function armEuler(name, x, y, z) {
+  if (name === 'mixamorigLeftArm') return new THREE.Euler(-z, y, x);
+  if (name === 'mixamorigRightArm') return new THREE.Euler(z, y, -x);
+  if (name === 'mixamorigLeftForeArm' || name === 'mixamorigRightForeArm') return new THREE.Euler(x, 0, z - y);
+  if (/^mixamorig(Left|Right)(UpLeg|Leg)$/.test(name)) return new THREE.Euler(-x, y, z);
+  return new THREE.Euler(x, y, z);
+}
+
+function hairStrandTexture() {
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 256;
+  const x = c.getContext('2d');
+  x.clearRect(0, 0, 64, 256);
+  for (let i = 0; i < 70; i++) {
+    const px = 4 + Math.random() * 56, w = 0.6 + Math.random() * 1.4, l = 150 + Math.random() * 106;
+    const v = 30 + Math.random() * 60;
+    x.strokeStyle = `rgba(${v},${v * 0.85},${v * 0.7},${0.6 + Math.random() * 0.4})`;
+    x.lineWidth = w;
+    x.beginPath(); x.moveTo(px, 0); x.quadraticCurveTo(px + (Math.random() - 0.5) * 6, l / 2, px + (Math.random() - 0.5) * 8, l); x.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+function buildAccessories(robeMat, builtinRobe = false) {
   const g = new THREE.Group();
   const gold = new THREE.MeshStandardMaterial({ color: 0xd8b96a, metalness: 0.7, roughness: 0.3 });
   const jade = new THREE.MeshStandardMaterial({ color: 0x9fd8bb, roughness: 0.4, emissive: 0x1d3a2a, emissiveIntensity: 0.4 });
   const hairMat = new THREE.MeshStandardMaterial({ color: 0x0d0b08, roughness: 0.55 });
 
+  if (!builtinRobe) {
   // 道袍下摆（宽袍大裙，及踝）
-  const skirt = new THREE.Mesh(new THREE.ConeGeometry(0.4, 1.25, 18, 1, true), robeMat);
-  skirt.geometry.translate(0, -0.625, 0);
-  skirt.position.y = 1.06;
-  skirt.scale.set(1.2, 1, 1.1);
-  g.add(skirt);
-  // 外袍披幅（背后垂下的袍角）
-  const train = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.95), robeMat);
-  train.position.set(0, 0.62, -0.16);
-  train.rotation.x = 0.12;
-  g.add(train);
+    const skirt = new THREE.Mesh(new THREE.ConeGeometry(0.4, 1.25, 18, 1, true), robeMat);
+    skirt.geometry.translate(0, -0.625, 0);
+    skirt.position.y = 1.06;
+    skirt.scale.set(1.2, 1, 1.1);
+    g.add(skirt);
+    // 外袍披幅（背后垂下的袍角）
+    const train = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.95), robeMat);
+    train.position.set(0, 0.62, -0.16);
+    train.rotation.x = 0.12;
+    g.add(train);
 
-  // 腰封 + 玉带钩（深色腰封配金边、碧玉）
-  const sash = new THREE.Mesh(new THREE.CylinderGeometry(0.29, 0.31, 0.14, 18, 1, true), robeMat);
-  sash.position.y = 1.03;
-  g.add(sash);
-  const sashTrim = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.018, 6, 24), gold);
-  sashTrim.rotation.x = Math.PI / 2;
-  sashTrim.position.y = 1.09;
-  g.add(sashTrim);
-  const jadeDisc = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.02, 12), jade);
-  jadeDisc.rotation.x = Math.PI / 2;
-  jadeDisc.position.set(0, 1.0, 0.31);
-  g.add(jadeDisc);
+    // 腰封 + 玉带钩（深色腰封配金边、碧玉）
+    const sash = new THREE.Mesh(new THREE.CylinderGeometry(0.29, 0.31, 0.14, 18, 1, true), robeMat);
+    sash.position.y = 1.03;
+    g.add(sash);
+    const sashTrim = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.018, 6, 24), gold);
+    sashTrim.rotation.x = Math.PI / 2;
+    sashTrim.position.y = 1.09;
+    g.add(sashTrim);
+    const jadeDisc = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.02, 12), jade);
+    jadeDisc.rotation.x = Math.PI / 2;
+    jadeDisc.position.set(0, 1.0, 0.31);
+    g.add(jadeDisc);
+  }
 
   // 高髻 + 黑金发冠 + 横穿玉簪 + 后披长发
   const bun = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 8), hairMat);
@@ -76,17 +104,43 @@ function buildAccessories(robeMat) {
   const pinTip = new THREE.Mesh(new THREE.SphereGeometry(0.016, 6, 6), jade);
   pinTip.position.set(-0.17, 0.03, 0);
   const bunGroup = new THREE.Group();
-  bunGroup.add(bun, crown, crownGem, pin, pinTip);
-  // 后披长发（三缕及腰）
+  if (builtinRobe) {
+    // 小发髻 + 横插碧玉簪（无金冠）
+    bun.scale.set(0.8, 0.75, 0.8);
+    jade.color.set(0x2f8f5c); jade.emissive.set(0x0a2416);
+    const pinHead = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.03, 10), jade);
+    pinHead.rotation.z = Math.PI / 2;
+    pinHead.position.set(0.17, 0.03, 0);
+    bunGroup.add(bun, pin, pinTip, pinHead);
+  } else bunGroup.add(bun, crown, crownGem, pin, pinTip);
+  // 后披长发：写实模型用发片（alpha 发丝贴图），旧模型保留三缕
   const hairGroup = new THREE.Group();
-  for (const [hx, hw, hl] of [[0, 0.09, 0.62], [-0.055, 0.05, 0.52], [0.055, 0.05, 0.52]]) {
-    const strand = new THREE.Mesh(new THREE.ConeGeometry(hw, hl, 6), hairMat);
-    strand.geometry.translate(0, -hl / 2, 0);
-    strand.position.set(hx, -0.02, -0.075);
-    strand.rotation.x = 0.18;
-    hairGroup.add(strand);
+  if (builtinRobe) {
+    const cardMat = new THREE.MeshStandardMaterial({ map: hairStrandTexture(), color: 0x2a2420, roughness: 0.42, alphaTest: 0.35, side: THREE.DoubleSide });
+    for (let i = 0; i < 34; i++) {
+      const f = i / 33 - 0.5;
+      const len = 0.5 + 0.12 * Math.cos(f * Math.PI) + Math.random() * 0.06;
+      const card = new THREE.Mesh(new THREE.PlaneGeometry(0.055, len, 1, 6), cardMat);
+      card.geometry.translate(0, -len / 2, 0);
+      const pa = card.geometry.attributes.position;
+      for (let k = 0; k < pa.count; k++) { const y = Math.max(0, -pa.getY(k)); pa.setZ(k, -0.06 * Math.pow(y / len, 1.6) - 0.15 * y * y); }
+      card.geometry.computeVertexNormals();
+      const ang = f * 2.2;
+      card.position.set(Math.sin(ang) * 0.085, -Math.abs(f) * 0.05, -Math.cos(ang) * 0.075 + 0.02);
+      card.rotation.y = ang * 0.9;
+      card.rotation.z = -f * 0.25;
+      hairGroup.add(card);
+    }
+  } else {
+    for (const [hx, hw, hl] of [[0, 0.09, 0.62], [-0.055, 0.05, 0.52], [0.055, 0.05, 0.52]]) {
+      const strand = new THREE.Mesh(new THREE.ConeGeometry(hw, hl, 6), hairMat);
+      strand.geometry.translate(0, -hl / 2, 0);
+      strand.position.set(hx, -0.02, -0.075);
+      strand.rotation.x = 0.18;
+      hairGroup.add(strand);
+    }
+    bunGroup.add(hairGroup);
   }
-  bunGroup.add(hairGroup);
 
   // 背负长剑
   const sword = new THREE.Group();
@@ -99,23 +153,26 @@ function buildAccessories(robeMat) {
   sword.add(blade, guard, grip);
   sword.rotation.z = 0.6;
 
-  return { group: g, bunGroup, sword };
+  return { group: g, bunGroup, hairGroup, sword, gold };
 }
 
 export class Player {
   static async create(scene, terrainHeight, spawn) {
-    const michelle = await loadGLB('models/Michelle.glb');
-    return new Player(scene, terrainHeight, spawn, michelle);
+    // 写实修士（MakeHuman CC0 人体 + 汉服，Mixamo 骨架）；加载失败回退旧模型
+    let gltf, realistic = true;
+    try { gltf = await loadGLB('models/Cultivator.glb'); }
+    catch (e) { console.warn('Cultivator.glb 加载失败，回退 Michelle', e); gltf = await loadGLB('models/Michelle.glb'); realistic = false; }
+    return new Player(scene, terrainHeight, spawn, gltf, realistic);
   }
 
-  constructor(scene, terrainHeight, spawn, michelle) {
+  constructor(scene, terrainHeight, spawn, michelle, realistic = false) {
     this.terrainHeight = terrainHeight;
 
     const model = michelle.scene;
-    // 归一化到真实身高 1.72
+    // 归一化到真实身高（男修 1.78，旧模型 1.72）
     const bb = new THREE.Box3().setFromObject(model);
     const h = bb.max.y - bb.min.y;
-    const scale = 1.72 / h;
+    const scale = (realistic ? 1.78 : 1.72) / h;
     model.scale.setScalar(scale);
     model.position.y = -bb.min.y * scale;
 
@@ -148,11 +205,23 @@ export class Player {
     };
     const robeMat = new THREE.MeshPhysicalMaterial({
       map: cloth('diff', true), normalMap: cloth('nor', false), roughnessMap: cloth('rough', false),
-      color: 0x3a6070, roughness: 1, metalness: 0, side: THREE.DoubleSide,
-      sheen: 0.8, sheenRoughness: 0.75, sheenColor: new THREE.Color(0x9cc4c8),
+      color: realistic ? 0x2c3b6e : 0x3a6070, roughness: 1, metalness: 0, side: THREE.DoubleSide,
+      sheen: 0.8, sheenRoughness: 0.75, sheenColor: new THREE.Color(realistic ? 0x8a9ccc : 0x9cc4c8),
     });
     robeMat.normalScale.set(1.2, 1.2);
-    const acc = buildAccessories(robeMat);
+    if (realistic) {
+      const innerMat = new THREE.MeshPhysicalMaterial({ color: 0xf0eee8, roughness: 0.9, sheen: 0.6, sheenColor: new THREE.Color(0xffffff), normalMap: robeMat.normalMap, side: THREE.DoubleSide });
+      const sashMat = robeMat.clone(); sashMat.color.set(0x1c2650);
+      const mats = {
+        Skin: new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.52, sheen: 0.35, sheenRoughness: 0.6, sheenColor: new THREE.Color(0xffb59a) }),
+        Eye: new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.05, clearcoat: 1, clearcoatRoughness: 0.02 }),
+        Hair: new THREE.MeshPhysicalMaterial({ color: 0x0d0a08, roughness: 0.38, sheen: 1, sheenRoughness: 0.35, sheenColor: new THREE.Color(0x5a4a40) }),
+        Shoe: new THREE.MeshStandardMaterial({ color: 0x15161b, roughness: 0.85 }),
+        Robe: robeMat, RobeInner: innerMat, Sash: sashMat,
+      };
+      model.traverse((o) => { if (o.isMesh && mats[o.material?.name]) o.material = mats[o.material.name]; });
+    }
+    const acc = buildAccessories(robeMat, realistic);
     this.inner.add(acc.group);
     this.swordMesh = acc.sword;
     // 剑挂背后、发髻上头
@@ -160,18 +229,27 @@ export class Player {
     if (spine) { acc.sword.position.set(0.02, 0.18, -16); acc.sword.scale.setScalar(100); spine.add(acc.sword); }
     else this.inner.add(acc.sword.translateY(1.55));
     const head = this.bones['mixamorigHead']?.bone;
-    if (head) { acc.bunGroup.position.set(0, 21, 3); acc.bunGroup.scale.setScalar(100); head.add(acc.bunGroup); }
-    else this.inner.add(acc.bunGroup.translateY(1.78));
+    if (head) {
+      if (realistic) acc.bunGroup.position.set(0, 21, -3); else acc.bunGroup.position.set(0, 21, 3);
+      acc.bunGroup.scale.setScalar(100); head.add(acc.bunGroup);
+      if (realistic) { acc.hairGroup.position.set(0, 15, -8); acc.hairGroup.scale.setScalar(100); head.add(acc.hairGroup); }
+    } else this.inner.add(acc.bunGroup.translateY(1.78));
 
     // 宽袖（挂在两个小臂骨骼上的喇叭袖）
     for (const side of ['Left', 'Right']) {
       const fore = this.bones[`mixamorig${side}ForeArm`]?.bone;
       if (!fore) continue;
-      const sleeve = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.55, 12, 1, true), robeMat);
-      sleeve.geometry.translate(0, 0.275, 0);
-      sleeve.position.set(0, 8, 0);
+      const sleeve = realistic
+        ? new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.06, 0.4, 20, 4, true), robeMat)
+        : new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.55, 12, 1, true), robeMat);
+      sleeve.geometry.translate(0, realistic ? 0.2 : 0.275, 0);
+      if (realistic) {
+        const trim = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.01, 6, 32), acc.gold);
+        trim.rotation.x = Math.PI / 2; trim.position.y = 0.4; sleeve.add(trim);
+      }
+      sleeve.position.set(0, realistic ? 2 : 8, 0);
       sleeve.scale.setScalar(100);
-      sleeve.rotation.x = Math.PI;
+      sleeve.rotation.x = realistic ? 0 : Math.PI;
       fore.add(sleeve);
     }
 
@@ -267,7 +345,7 @@ export class Player {
     const set = (name, x, y, z) => {
       const ref = b[name];
       if (!ref) return;
-      const target = ref.rest.clone().multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z)));
+      const target = ref.rest.clone().multiply(new THREE.Quaternion().setFromEuler(armEuler(name, x, y, z)));
       ref.bone.quaternion.slerpQuaternions(ref.rest, target, k);
     };
     set('mixamorigLeftUpLeg', -1.35, 0.35, 0.15);
@@ -288,7 +366,7 @@ export class Player {
     const set = (name, x, y, z) => {
       const ref = b[name];
       if (!ref) return;
-      const target = new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z));
+      const target = new THREE.Quaternion().setFromEuler(armEuler(name, x, y, z));
       ref.bone.quaternion.slerp(ref.rest.clone().multiply(target), 0.2);
     };
     const runK = THREE.MathUtils.clamp(spd / RUN, 0, 1);
@@ -365,7 +443,7 @@ export class Player {
       const fb = this.bones;
       const fset = (name, x, y, z) => {
         const ref = fb[name]; if (!ref) return;
-        ref.bone.quaternion.copy(ref.rest).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z)));
+        ref.bone.quaternion.copy(ref.rest).multiply(new THREE.Quaternion().setFromEuler(armEuler(name, x, y, z)));
       };
       fset('mixamorigLeftArm', -0.9, 0, -0.35);
       fset('mixamorigRightArm', -0.9, 0, 0.35);
