@@ -411,6 +411,132 @@ export function buildWorld(scene, renderer) {
   herbs.count = hi;
   scene.add(herbs);
 
+  // ---------- 粉紫花树（灵桃/樱花点缀水岸） ----------
+  const blossomMat = new THREE.MeshStandardMaterial({ color: 0xe8a8c8, roughness: 1 });
+  const BLOSSOM = 90;
+  const btrunks = new THREE.InstancedMesh(trunkGeo, trunkMat, BLOSSOM);
+  const bcanopies = new THREE.InstancedMesh(
+    new THREE.SphereGeometry(1.9, 8, 6).translate(0, 4.6, 0), blossomMat, BLOSSOM);
+  let bli = 0;
+  for (let i = 0; i < 4000 && bli < BLOSSOM; i++) {
+    const x = (rng() * 2 - 1) * (WORLD_RADIUS - 15);
+    const z = (rng() * 2 - 1) * (WORLD_RADIUS - 15);
+    const rd = riverDist(x, z);
+    if (rd > 30 || rd < 9) continue;
+    const h = terrainHeight(x, z);
+    if (h < WATER_LEVEL + 0.4 || h > 13) continue;
+    const sc = 0.6 + rng() * 0.9;
+    q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rng() * Math.PI * 2);
+    s.setScalar(sc);
+    m.compose(new THREE.Vector3(x, h + 1.5 * sc, z), q, s);
+    btrunks.setMatrixAt(bli, m);
+    m.compose(new THREE.Vector3(x, h, z), q, s);
+    bcanopies.setMatrixAt(bli, m);
+    bcanopies.setColorAt(bli, cTint.setHSL(0.85 + rng() * 0.12, 0.55, 0.6 + rng() * 0.15));
+    bli++;
+  }
+  btrunks.count = bcanopies.count = bli;
+  scene.add(btrunks, bcanopies);
+
+  // ---------- 苔石（河岸苔藓覆盖的圆石） ----------
+  const mossMat = new THREE.MeshStandardMaterial({ map: rockTex, color: 0x7fa87a, roughness: 1 });
+  const moss = new THREE.InstancedMesh(rockGeo, mossMat, 120);
+  let mi = 0;
+  for (let i = 0; i < 3000 && mi < 120; i++) {
+    const x = (rng() * 2 - 1) * (WORLD_RADIUS - 15);
+    const z = (rng() * 2 - 1) * (WORLD_RADIUS - 15);
+    const rd = riverDist(x, z);
+    if (rd > 18 || rd < 4) continue;
+    const h = terrainHeight(x, z);
+    if (h < WATER_LEVEL - 0.6 || h > WATER_LEVEL + 2.5) continue;
+    s.set(0.4 + rng() * 1.4, 0.35 + rng() * 0.9, 0.4 + rng() * 1.4);
+    q.setFromEuler(new THREE.Euler(rng() * 3, rng() * 3, rng() * 3));
+    m.compose(new THREE.Vector3(x, h + 0.15, z), q, s);
+    moss.setMatrixAt(mi++, m);
+  }
+  moss.count = mi;
+  scene.add(moss);
+
+  // ---------- 发光灵荷（浮在河面的灵光花朵） ----------
+  const lotusMat = new THREE.MeshStandardMaterial({
+    color: 0xffe8f4, emissive: 0x66f0d8, emissiveIntensity: 0.9, roughness: 0.4,
+  });
+  const lotusGeo = new THREE.SphereGeometry(0.16, 6, 5).scale(1, 0.55, 1);
+  const LOTUS = 90;
+  const lotus = new THREE.InstancedMesh(lotusGeo, lotusMat, LOTUS);
+  const lotusPos = [];
+  let li = 0;
+  for (let i = 0; i < 3000 && li < LOTUS; i++) {
+    const z = (rng() * 2 - 1) * (WORLD_RADIUS - 30);
+    const x = riverX(z) + (rng() - 0.5) * 10;
+    lotusPos.push({ x, z, ph: rng() * 6.3 });
+    q.identity(); s.setScalar(0.7 + rng() * 1.1);
+    m.compose(new THREE.Vector3(x, WATER_LEVEL + 0.06, z), q, s);
+    lotus.setMatrixAt(li++, m);
+  }
+  lotus.count = li;
+  scene.add(lotus);
+  updaters.push((dt, t) => {
+    for (let i = 0; i < lotusPos.length; i++) {
+      const L = lotusPos[i];
+      m.makeTranslation(L.x, WATER_LEVEL + 0.06 + Math.sin(t * 1.1 + L.ph) * 0.08, L.z);
+      lotus.setMatrixAt(i, m);
+    }
+    lotus.instanceMatrix.needsUpdate = true;
+  });
+
+  // ---------- 灵蝶（发光小蝶绕花飞舞） ----------
+  const flySprites = [];
+  const flyColors = [0x8fffe0, 0xa8d8ff, 0xffe8f8, 0xd8ffb0];
+  for (let i = 0; i < 26; i++) {
+    const f = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTex, color: flyColors[i % 4], transparent: true, opacity: 0,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
+    const x = (rng() * 2 - 1) * 120, z = (rng() * 2 - 1) * 120;
+    f.userData = { cx: x, cz: z, cy: terrainHeight(x, z) + 1.5 + rng() * 3, ph: rng() * 6.3, r: 3 + rng() * 6, w: 0.6 + rng() * 0.8 };
+    f.scale.setScalar(0.28 + rng() * 0.3);
+    scene.add(f);
+    flySprites.push(f);
+  }
+  updaters.push((dt, t) => {
+    for (const f of flySprites) {
+      const u = f.userData;
+      f.position.set(
+        u.cx + Math.cos(t * u.w + u.ph) * u.r,
+        u.cy + Math.sin(t * 1.7 + u.ph) * 0.8,
+        u.cz + Math.sin(t * u.w + u.ph) * u.r);
+    }
+  });
+
+  // ---------- 谷地浓雾层（水面与谷底的流动雾团） ----------
+  const mistMat = new THREE.MeshBasicMaterial({
+    map: glowTex, color: 0xeef6f4, transparent: true, opacity: 0.2,
+    depthWrite: false,
+  });
+  const mistGeo = new THREE.PlaneGeometry(1, 1);
+  const MIST = 60;
+  const mists = new THREE.InstancedMesh(mistGeo, mistMat, MIST);
+  const mistData = [];
+  for (let i = 0; i < MIST; i++) {
+    const z = (rng() * 2 - 1) * (WORLD_RADIUS - 20);
+    const x = riverX(z) + (rng() - 0.5) * 46;
+    mistData.push({ x, z, w: 26 + rng() * 40, hgt: 5 + rng() * 8, ph: rng() * 6.3, sp: 0.5 + rng() });
+  }
+  scene.add(mists);
+  updaters.push((dt, t) => {
+    for (let i = 0; i < MIST; i++) {
+      const c = mistData[i];
+      const mx = c.x + Math.sin(t * 0.05 * c.sp + c.ph) * 8;
+      m.compose(
+        new THREE.Vector3(mx, WATER_LEVEL + 1.5 + Math.sin(t * 0.2 + c.ph), c.z),
+        q.identity(),
+        s.set(c.w, c.hgt, 1));
+      mists.setMatrixAt(i, m);
+    }
+    mists.instanceMatrix.needsUpdate = true;
+  });
+
   // ---------- 远处群山剪影（多圈层叠，雾化淡出） ----------
   const farMat = new THREE.MeshBasicMaterial({ color: 0x8fa8bc, fog: true });
   for (const [dist, n, rh, rw] of [[320, 14, 90, 160], [430, 11, 130, 230], [560, 8, 175, 300]]) {
@@ -489,6 +615,16 @@ export function buildWorld(scene, renderer) {
     scene.add(wf);
     waterfalls.push({ wf, baseY: def.y, x: def.x + def.r * 0.7, z: def.z });
   }
+  // ---------- 水岸小亭（参考图的散落亭阁） ----------
+  for (const [px, pz] of [[-52, 58], [62, 30], [-20, -95], [85, -60]]) {
+    const h = terrainHeight(px, pz);
+    if (h < WATER_LEVEL + 0.4) continue;
+    const pv = buildPavilion(2.6 + rng() * 1.2);
+    pv.position.set(px, h, pz);
+    pv.rotation.y = rng() * Math.PI * 2;
+    scene.add(pv);
+  }
+
   updaters.push((dt) => {
     for (const w of waterfalls) {
       const p = w.wf.geometry.attributes.position;
@@ -697,15 +833,19 @@ export function buildWorld(scene, renderer) {
     scene.fog.color.copy(tmpC);
     scene.fog.near = 90 - night * 30;
     scene.fog.far = 950 - night * 300;
-    renderer.toneMappingExposure = 0.55 + day * 0.45;
+    renderer.toneMappingExposure = 0.62 + day * 0.55;
     cloudMat.color.setScalar(0.25 + day * 0.75);
+    // 谷地浓雾（参考图的水面雾层）：白天浓、夜里淡
+    mistMat.opacity = 0.08 + day * 0.34;
+    // 灵蝶白天飞舞（夜里收拢变暗）
+    for (const b of flySprites) b.material.opacity = 0.15 + day * 0.6;
 
     // water
     water.material.uniforms.sunDirection.value.copy(sunDir);
     water.material.uniforms.sunColor.value.lerpColors(
       new THREE.Color(0x1a2433), new THREE.Color(0xffffff), day);
     water.material.uniforms.waterColor.value.lerpColors(
-      new THREE.Color(0x04101c), new THREE.Color(0x0d3841), day);
+      new THREE.Color(0x04101c), new THREE.Color(0x2e8f7d), day);
     water.material.uniforms.time.value += dt;
 
     // 灵气夜间更亮
