@@ -101,7 +101,15 @@ export function buildWorld(scene, renderer) {
 
   // ---------- lighting ----------
   const sun = new THREE.DirectionalLight(0xfff2d5, 3.0);
-  scene.add(sun);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  const shCam = sun.shadow.camera;
+  shCam.left = shCam.bottom = -95;
+  shCam.right = shCam.top = 95;
+  shCam.near = 10; shCam.far = 560;
+  sun.shadow.bias = -0.00035;
+  sun.shadow.normalBias = 1.2;
+  scene.add(sun, sun.target);
   const hemi = new THREE.HemisphereLight(0xbfe6ff, 0x2e4d3a, 1.0);
   scene.add(hemi);
   const amb = new THREE.AmbientLight(0xffffff, 0.16);
@@ -204,6 +212,7 @@ export function buildWorld(scene, renderer) {
       `);
   };
   const terrain = new THREE.Mesh(geo, terrainMat);
+  terrain.receiveShadow = true;
   scene.add(terrain);
 
   // ---------- water（真实反射水面） ----------
@@ -828,6 +837,7 @@ export function buildWorld(scene, renderer) {
   // ---------- 昼夜循环 ----------
   let dayTime = 0.32; // 清晨
   const sunDir = new THREE.Vector3();
+  const shadowAnchor = new THREE.Vector3();
   const fogDay = new THREE.Color(0xb9d3cd);
   const fogDusk = new THREE.Color(0xcf9d76);
   const fogNight = new THREE.Color(0x0a1420);
@@ -846,14 +856,15 @@ export function buildWorld(scene, renderer) {
     const dusk = Math.max(0, 1 - Math.abs(sunAlt) / 0.22) * day;
     const night = 1 - day;
 
-    // sun / moon 位置与光照
+    // sun / moon 位置与光照（光源跟随玩家锚点，阴影只算近场）
     const moonDir = sunDir.clone().negate();
+    const lightDir = sunAlt > -0.05 ? sunDir : moonDir;
+    sun.position.copy(shadowAnchor).addScaledVector(lightDir, 180);
+    sun.target.position.copy(shadowAnchor);
     if (sunAlt > -0.05) {
-      sun.position.copy(sunDir).multiplyScalar(180);
       sun.color.lerpColors(sunDusk, sunDay, day);
       sun.intensity = 0.3 + day * 2.7;
     } else {
-      sun.position.copy(moonDir).multiplyScalar(180);
       sun.color.copy(moonLight);
       sun.intensity = 0.35;
     }
@@ -915,11 +926,32 @@ export function buildWorld(scene, renderer) {
     landmarks: realm.landmarks,
     dragon: realm.dragon,
     phoenix: realm.phoenix,
+    sun,
+    setShadowAnchor(v) { shadowAnchor.copy(v); },
+    setShadowMapSize(n) {
+      sun.castShadow = n > 0;
+      if (n > 0) {
+        sun.shadow.mapSize.set(n, n);
+        if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
+      }
+    },
     update(dt, t) {
       for (const f of updaters) f(dt, t);
       return updateDayNight(dt);
     },
   };
+}
+
+// 批量标记阴影：受光照实体网格才投影；发光/透明体不投影
+export function applyShadowFlags(root) {
+  root.traverse((o) => {
+    if (!o.isMesh && !o.isInstancedMesh) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    const lit = mats.some((m) => m && (m.isMeshStandardMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial));
+    const glow = mats.some((m) => m && (m.transparent || m.blending === THREE.AdditiveBlending));
+    o.castShadow = lit && !glow;
+    if (lit) o.receiveShadow = true;
+  });
 }
 
 // 圆形径向渐变光点贴图（粒子用）

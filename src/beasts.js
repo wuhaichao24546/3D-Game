@@ -123,7 +123,13 @@ export class BeastManager {
       mesh.scale.setScalar(Math.min(s, 20));
       const { x, z, h } = this.findLand(center.x, center.z);
       mesh.position.set(x, h, z);
-      mesh.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
+      mesh.traverse((o) => {
+        if (!o.isMesh) return;
+        o.frustumCulled = false;
+        const ms = Array.isArray(o.material) ? o.material : [o.material];
+        if (!ms.some((m) => m && m.transparent)) o.castShadow = true;
+        o.receiveShadow = true;
+      });
       this.scene.add(mesh);
       const mixer = new THREE.AnimationMixer(mesh);
       if (this.horseProto.animations.length) mixer.clipAction(this.horseProto.animations[0]).play();
@@ -160,7 +166,7 @@ export class BeastManager {
         o.material = o.material.clone();
         o.material.color?.lerp(new THREE.Color(0x66d8ff), 0.5);
       }
-      if (o.isMesh) o.frustumCulled = false;
+      if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; o.receiveShadow = true; }
     });
     this.scene.add(mesh);
     const mixer = new THREE.AnimationMixer(mesh);

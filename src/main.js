@@ -1,7 +1,11 @@
 import * as THREE from 'three';
 import { DefaultLoadingManager } from 'three';
 import './style.css';
-import { buildWorld, terrainHeight, WATER_LEVEL, SHICHEN } from './world.js';
+import { buildWorld, terrainHeight, WATER_LEVEL, SHICHEN, applyShadowFlags } from './world.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { Player } from './player.js';
 import { Cultivation, LINGGEN } from './cultivation.js';
 import { BeastManager } from './beasts.js';
@@ -12,11 +16,13 @@ import { Skills, SKILL_DEFS } from './skills.js';
 import { loadSave, hasSave, clearSave, writeSave } from './save.js';
 
 // ---------- renderer / scene ----------
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.8;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.getElementById('app').appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -96,6 +102,7 @@ document.querySelector('.login-enter').addEventListener('click', doLogin);
 
 async function start() {
   const world = buildWorld(scene, renderer);
+  applyShadowFlags(scene); // 静态场景批量投影标记
   await loginDone; // 等用户登录（世界已在后台渲染）
   let spawn = new THREE.Vector3(46, 10, 76); // 青溪村出生点
   for (let r = 6; r < 60 && spawn.y <= WATER_LEVEL + 0.8; r += 4) {
@@ -121,6 +128,45 @@ async function start() {
   });
   window.__game = { scene, camera, player, beasts: null, world, THREE };
   window.__setCam = (y, p) => { camYaw = y; if (p !== undefined) camPitch = p; };
+
+  // ---------- 画质档：高(2x+2048阴影+泛光) 中(1.5x+1024阴影) 低(1x无阴影) ----------
+  const QUALITY = {
+    high: { name: '高', pr: 2, shadow: 2048, bloom: true },
+    mid: { name: '中', pr: 1.5, shadow: 1024, bloom: false },
+    low: { name: '低', pr: 1, shadow: 0, bloom: false },
+  };
+  let quality = localStorage.getItem('yunxi_quality') || 'high';
+  if (!QUALITY[quality]) quality = 'high';
+  let qualityManual = !!localStorage.getItem('yunxi_quality');
+  let composer = null, bloomOn = false;
+  const qBtn = document.getElementById('quality-btn');
+  function ensureComposer() {
+    if (composer) return;
+    const rt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: 4 });
+    composer = new EffectComposer(renderer, rt);
+    composer.addPass(new RenderPass(scene, camera));
+    composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.38, 0.55, 0.82));
+    composer.addPass(new OutputPass());
+  }
+  function applyQuality() {
+    const q = QUALITY[quality];
+    renderer.setPixelRatio(Math.min(devicePixelRatio, q.pr));
+    renderer.setSize(innerWidth, innerHeight);
+    world.setShadowMapSize(q.shadow);
+    bloomOn = q.bloom;
+    if (bloomOn) { ensureComposer(); composer.setPixelRatio(Math.min(devicePixelRatio, q.pr)); composer.setSize(innerWidth, innerHeight); }
+    qBtn.textContent = `画质 · ${q.name}`;
+  }
+  qBtn.addEventListener('click', () => {
+    quality = quality === 'high' ? 'mid' : quality === 'mid' ? 'low' : 'high';
+    qualityManual = true;
+    localStorage.setItem('yunxi_quality', quality);
+    applyQuality();
+    hud.floater(player.position, `画质 · ${QUALITY[quality].name}`, 'gain');
+  });
+  applyQuality();
+  // 帧率过低自动降档（用户未手动选择时）
+  let fpsT = 0, fpsN = 0;
 
   const cult = new Cultivation();
   cult.linggen = chosenLinggen;
@@ -266,6 +312,7 @@ async function start() {
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight);
+    composer?.setSize(innerWidth, innerHeight);
   });
 
   const camTarget = new THREE.Vector3();
@@ -300,6 +347,18 @@ async function start() {
     const t = clock.elapsedTime;
 
     const dayNight = world.update(dt, t);
+    world.setShadowAnchor(player.position);
+    // 帧率监控：连续 6 秒低于 40fps 自动降一档
+    fpsT += dt; fpsN++;
+    if (fpsT >= 6) {
+      const avg = fpsN / fpsT;
+      fpsT = 0; fpsN = 0;
+      if (!qualityManual && avg < 40 && quality !== 'low') {
+        quality = quality === 'high' ? 'mid' : 'low';
+        applyQuality();
+        hud.floater(player.position, `已自动调整画质 · ${QUALITY[quality].name}`, 'gain');
+      }
+    }
     player.update(dt, input, camYaw);
     beasts?.update(dt, player.position, t, (dmg, b) => {
       if (!player.alive) return;
@@ -353,7 +412,7 @@ async function start() {
     }
 
     updateCamera(dt);
-    renderer.render(scene, camera);
+    if (bloomOn) composer.render(); else renderer.render(scene, camera);
 
     if (firstFrame) { firstFrame = false; hud.showBanner('云游修仙 · 入界', 2200); }
   }

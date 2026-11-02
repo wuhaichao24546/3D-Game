@@ -346,3 +346,19 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0a1210; }
   background: linear-gradient(180deg, rgba(40,54,50,0.9), rgba(18,28,26,0.95));
 }
 #login-save button:hover { filter: brightness(1.15); }
+
+/* 画质档按钮 */
+#quality-btn {
+  position: absolute;
+  top: 14px; right: 16px;
+  background: rgba(10, 22, 26, 0.55);
+  border: 1px solid rgba(140, 220, 200, 0.4);
+  color: #cfe8dc;
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 14px;
+  cursor: pointer;
+  letter-spacing: 1px;
+  backdrop-filter: blur(4px);
+}
+#quality-btn:hover { background: rgba(20, 40, 44, 0.75); border-color: #8fd8c8; }

@@ -126,7 +126,7 @@ export class Player {
     this.mesh.position.copy(spawn);
     scene.add(this.mesh);
 
-    model.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; } });
+    model.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; o.receiveShadow = true; } });
 
     // 程序化骨骼动画（两套骨架姿态不同，不引入外部动画）
     this.bones = {};
