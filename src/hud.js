@@ -18,6 +18,12 @@ export class HUD {
     this.hpText = document.getElementById('hp-text');
     this.manaBar = document.getElementById('mana-bar');
     this.manaText = document.getElementById('mana-text');
+    this.furyBar = document.getElementById('fury-bar');
+    this.furyText = document.getElementById('fury-text');
+    this.castbarEl = document.getElementById('castbar');
+    this.castbarName = document.getElementById('castbar-name');
+    this.castbarFill = document.getElementById('castbar-fill');
+    this.ultVignetteEl = document.getElementById('ult-vignette');
     this.quickbar = document.getElementById('quickbar');
     this.beastOverlay = document.getElementById('beast-overlay');
     this.floaters = document.getElementById('floaters');
@@ -61,6 +67,22 @@ export class HUD {
     this.manaBar.style.width = `${(mp * 100).toFixed(1)}%`;
     this.manaText.textContent = `真元 ${Math.ceil(mana)}/${maxMana}`;
   }
+
+  setFury(f, max = 100) {
+    const p = Math.max(0, Math.min(1, f / max));
+    this.furyBar.style.width = `${(p * 100).toFixed(1)}%`;
+    this.furyBar.classList.toggle('full', p >= 1);
+    this.furyText.textContent = p >= 1 ? '战意已满 · R 万剑归宗！' : `战意 ${Math.floor(f)}/${max} · R 大招`;
+  }
+
+  castBar(frac, name = '') {
+    if (frac === null || frac === undefined) { this.castbarEl.classList.add('hidden'); return; }
+    this.castbarEl.classList.remove('hidden');
+    this.castbarName.textContent = `吟唱 · ${name}`;
+    this.castbarFill.style.width = `${Math.min(100, frac * 100)}%`;
+  }
+
+  ultVignette(on) { this.ultVignetteEl.classList.toggle('show', !!on); }
 
   setLinggen(key, name) {
     this.linggenEl.textContent = name || '';

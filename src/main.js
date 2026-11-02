@@ -283,6 +283,9 @@ async function start() {
     lv: () => lv,
     get beasts() { return beasts; },
     onKill: onBeastKilled,
+    addFury: (n) => skills.addFury(n),
+    setTimeScale: (v) => { timeScale = v; },
+    shake: (a) => { shakeAmp = Math.max(shakeAmp, a); },
   };
   hud.buildQuickbar(SKILL_DEFS, (id) => inventory.count(id));
 
@@ -322,6 +325,7 @@ async function start() {
       if (open) document.exitPointerLock?.();
       else renderer.domElement.requestPointerLock?.();
     } else {
+      if (e.code === 'KeyR') { skills.castUlt(skillCtx); return; }
       const digit = 'Digit1 Digit2 Digit3 Digit4 Digit5 Digit6'.split(' ').indexOf(e.code);
       if (digit >= 0) {
         const d = SKILL_DEFS[digit];
@@ -364,7 +368,8 @@ async function start() {
   const camTarget = new THREE.Vector3();
   function updateCamera(dt) {
     const p = player.position;
-    const dist = player.flying ? 9 : 6;
+    // 大招运镜：拉近且平视
+    const dist = skills.ultCam > 0 ? THREE.MathUtils.lerp(player.flying ? 9 : 6, 3.2, skills.ultCam) : (player.flying ? 9 : 6);
     const offset = new THREE.Vector3(
       Math.sin(camYaw) * Math.cos(camPitch),
       Math.sin(camPitch),
@@ -375,11 +380,20 @@ async function start() {
     const gh = terrainHeight(desired.x, desired.z) + 0.6;
     if (desired.y < gh) desired.y = gh;
     camera.position.lerp(desired, 1 - Math.exp(-8 * dt));
+    // 屏幕震动：衰减噪声偏移
+    if (shakeAmp > 0.001) {
+      camera.position.x += (Math.random() - 0.5) * shakeAmp;
+      camera.position.y += (Math.random() - 0.5) * shakeAmp;
+      camera.position.z += (Math.random() - 0.5) * shakeAmp;
+      shakeAmp *= Math.exp(-6 * Math.max(dt, 0.001));
+    }
     camera.lookAt(camTarget);
   }
 
   const clock = new THREE.Clock();
   let firstFrame = true;
+  let timeScale = 1;          // 子弹时间（大招起手）
+  let shakeAmp = 0;           // 屏幕震动幅度
 
   function breakthrough(realms) {
     recalc(); // 境界提升后面板重算
@@ -390,7 +404,7 @@ async function start() {
 
   function tick() {
     requestAnimationFrame(tick);
-    const dt = Math.min(clock.getDelta(), 0.05);
+    const dt = Math.min(clock.getDelta(), 0.05) * timeScale;
     const t = clock.elapsedTime;
 
     world.setFocus(player.position);
@@ -413,6 +427,7 @@ async function start() {
       // 怪物攻击过伤害引擎：玩家防御 + 境界差（碾压/不破防）
       const c = calcDamage(dmg, b.lv, lv, stats.def, 0.03);
       const dealt = player.takeDamage(c.dealt);
+      if (dealt > 0) { skills.addFury(3); skills.interrupt(skillCtx); }
       if (c.note === 'block') hud.floater(player.position, '妖兽无法破防', 'block');
       else if (c.note === 'crush') hud.floater(player.position, `境界碾压 -${dealt}`, 'crush');
       else if (dealt > 0) hud.floater(player.position, `-${dealt}`, 'hurt');
@@ -421,6 +436,7 @@ async function start() {
       const c = calcDamage(stats.atk * stats.swordMult, lv, beast.lv, beast.stats.def, stats.crit);
       const res = beasts.damage(beast, c.dealt, '剑气');
       if (res) {
+        skills.addFury(res.killed ? 20 : 6);
         if (c.note === 'block') hud.floater(beast.mesh.position, `无法破防 -${res.amount}`, 'block');
         else if (c.note === 'resist') hud.floater(beast.mesh.position, `-${res.amount} 护体`, 'resist');
         else hud.floater(beast.mesh.position, `-${res.amount}`, c.crit ? 'crit' : 'hit');
@@ -456,6 +472,7 @@ async function start() {
 
     hud.update(cult);
     hud.setVitals(player.hp, player.maxHp, skills.mana, skills.maxMana);
+    hud.setFury(skills.fury);
     hud.updateQuickbar(SKILL_DEFS.map((_, i) => skills.cooldowns[i] || 0), skills.mana, SKILL_DEFS);
     if (beasts) hud.updateBeastBars(beasts.targets, camera, lv);
     hud.setTimeOfDay(dayNight.dayTime, SHICHEN, dayNight.day);

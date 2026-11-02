@@ -26,11 +26,33 @@ export class Skills {
     this.regen = 7;          // 真元/秒
     this.cooldowns = {};     // idx -> remaining
     this.fx = [];            // 瞬时特效对象 {update(dt)->bool}
+    this.fury = 0;           // 战意 0~100
+    this.lastCombat = -99;   // 上次造成/受到伤害的时间
+    this.casting = null;     // {name, t, dur, done} 吟唱状态
+    this.ultActive = false;  // 大招进行中（子弹时间/运镜）
+    this.ultCam = 0;         // >0 时相机拉近
+  }
+
+  addFury(n, ctx) {
+    this.fury = Math.min(100, this.fury + n);
+    this.lastCombat = performance.now() / 1000;
+  }
+
+  // 被打断（由 main 在玩家受击时调用）：吟唱中断只耗蓝不耗 CD；大招起手返 40% 战意
+  interrupt(ctx) {
+    if (this.casting) {
+      ctx.hud.showBanner(`施法被打断 · ${this.casting.name}`, 1300);
+      this.casting = null;
+      ctx.hud.castBar(null);
+      if (ctx.player) ctx.player.slowFactor = 1;
+    }
+    if (this.ultRefund) { this.fury = Math.min(100, this.fury + 40); this.ultRefund = false; }
   }
 
   use(idx, ctx) {
     const def = SKILL_DEFS[idx];
     if (!def || (this.cooldowns[idx] || 0) > 0) return null;
+    if (this.casting || this.ultActive) return null; // 吟唱/大招中不能施法
 
     // 丹药槽：不耗真元，走背包
     if (def.item) {
@@ -86,9 +108,19 @@ export class Skills {
     });
   }
 
-  // ---- 2 雷符：天降雷柱 ----
+  // ---- 2 雷符：1.2s 吟唱后天降雷柱（受击打断） ----
   cast2(ctx) {
     const target = aimPoint(ctx, 36);
+    this.casting = {
+      name: '雷符', t: 1.2, dur: 1.2,
+      done: () => this.boltAt(ctx, target),
+    };
+    ctx.player.slowFactor = 0.3; // 吟唱中移动迟缓
+    this.startCasting(ctx);
+    ctx.hud.castBar(0, '雷符');
+  }
+
+  boltAt(ctx, target) {
     const dmg = ctx.stats.sp * 1.5 * ctx.linggen.spellMult;
     const bolt = new THREE.Mesh(
       new THREE.CylinderGeometry(0.12, 0.3, 24, 6, 1, true),
@@ -139,8 +171,9 @@ export class Skills {
     });
   }
 
-  // ---- 4 遁光：视向突进 ----
+  // ---- 4 遁光：视向突进 + 0.25s 无敌帧 + 残影 ----
   cast4(ctx) {
+    ctx.player.invulnT = Math.max(ctx.player.invulnT, performance.now() / 1000 + 0.25);
     const dir = new THREE.Vector3();
     ctx.camera.getWorldDirection(dir);
     dir.y = 0;
@@ -151,8 +184,18 @@ export class Skills {
     const dist = 9;
     const end = p.clone().addScaledVector(dir, dist);
     end.y = ctx.terrainHeight(end.x, end.z) + (ctx.player.flying ? Math.max(p.y - ctx.terrainHeight(end.x, end.z), 1) : 0);
-    // 遁光拖尾
+    // 遁光拖尾 + 残影
     const trail = new THREE.Mesh(new THREE.PlaneGeometry(0.5, dist), ADD(0x8af0e8, 0.5));
+    const ghost = new THREE.Mesh(new THREE.CapsuleGeometry(0.35, 1.1, 4, 8), ADD(0x8af0e8, 0.35));
+    ghost.position.copy(start).y += 0.9;
+    ctx.scene.add(ghost);
+    let ghostT = 0;
+    this.fx.push({ update: (d) => {
+      ghostT += d;
+      ghost.material.opacity = Math.max(0, 0.35 - ghostT * 1.2);
+      if (ghostT > 0.35) { ctx.scene.remove(ghost); return false; }
+      return true;
+    } });
     trail.position.copy(start.clone().lerp(end, 0.5)).y += 1.0;
     trail.lookAt(end.x, start.y + 1, end.z);
     ctx.scene.add(trail);
@@ -174,14 +217,202 @@ export class Skills {
     });
   }
 
+  // ================= 大招「万剑归宗」 =================
+  // 分镜：0.4s 起手(子弹时间+运镜+浮空) → 0.8s 剑轮展开 → 1.2s 剑雨洗地+裂纹+震屏 → 0.8s 收尾
+  castUlt(ctx) {
+    if (this.fury < 100 || this.ultActive || this.casting) {
+      if (this.fury < 100) ctx.hud.showBanner(`战意不足 ${Math.floor(this.fury)}/100`, 1200);
+      return false;
+    }
+    this.fury = 0;
+    this.ultActive = true;
+    this.ultRefund = true;        // 起手被打断返还 40 战意
+    this.ultCam = 1;
+    ctx.setTimeScale(0.3);
+    ctx.hud.ultVignette(true);
+    ctx.hud.showBanner('万剑归宗', 1800);
+    const target = aimPoint(ctx, 30);
+    const player = ctx.player;
+    const baseY = player.position.y;
+
+    // 36 柄实体灵剑（InstancedMesh）
+    const N = 36;
+    const swordGeo = new THREE.BoxGeometry(0.07, 1.5, 0.13);
+    swordGeo.translate(0, 0.75, 0);
+    const swordMat = new THREE.MeshStandardMaterial({
+      color: 0xffe9a8, metalness: 0.9, roughness: 0.25,
+      emissive: 0xd8a83e, emissiveIntensity: 1.6,
+    });
+    const wheel = new THREE.InstancedMesh(swordGeo, swordMat, N);
+    wheel.frustumCulled = false;
+    ctx.scene.add(wheel);
+    // 每柄剑的状态：展开角/半径 → 爆发时目标点
+    const st = [];
+    for (let i = 0; i < N; i++) {
+      const a = (i / N) * Math.PI * 2;
+      const ta = Math.random() * Math.PI * 2, tr = Math.random() * 10;
+      st.push({
+        a, r: 0.2,
+        from: new THREE.Vector3(),
+        to: new THREE.Vector3(target.x + Math.cos(ta) * tr, ctx.terrainHeight(target.x + Math.cos(ta) * tr, target.z + Math.sin(ta) * tr) + 0.4, target.z + Math.sin(ta) * tr),
+        delay: 0.9 + (i % 9) * 0.09, dur: 0.35, launched: false,
+      });
+    }
+    const dummy = new THREE.Object3D();
+    // 地面裂纹 + 震屏 + 伤害，爆发时触发
+    let blasted = false;
+    let t = 0;
+    this.fx.push({
+      update: (dt) => {
+        t += dt;
+        // —— 阶段演出 ——
+        if (t < 0.4) {
+          // 起手：角色浮空
+          player.position.y = baseY + (t / 0.4) * 1.4;
+          this.ultCam = 1;
+        } else if (t < 1.2) {
+          const k = (t - 0.4) / 0.8;
+          player.position.y = baseY + 1.4 + Math.sin(k * Math.PI) * 0.3;
+          for (const s of st) s.r = 0.2 + k * 2.6;
+          ctx.setTimeScale(0.3 + k * 0.4);
+        } else {
+          if (!blasted) {
+            blasted = true;
+            this.ultRefund = false;
+            ctx.setTimeScale(1);
+            ctx.shake(0.55);
+            const dmg = ctx.stats.atk * 4.5 * ctx.linggen.swordMult;
+            damageArea(ctx, target, 12, dmg, '万剑归宗');
+            ctx.bursts.spawn(new THREE.Vector3(target.x, target.y + 1, target.z), 0xffd97a, 140, 14);
+            ctx.bursts.spawn(new THREE.Vector3(player.position.x, player.position.y + 1, player.position.z), 0xfff3c8, 80, 10);
+            this.spawnCracks(ctx, target, 5);
+          }
+          // 收尾镜头回位
+          this.ultCam = Math.max(0, this.ultCam - dt * 0.9);
+          ctx.hud.ultVignette(this.ultCam > 0.1);
+        }
+        // —— 剑位置矩阵 ——
+        for (let i = 0; i < N; i++) {
+          const s = st[i];
+          dummy.position.set(0, -99, 0); // 默认藏
+          if (!s.launched) {
+            if (t >= s.delay) {
+              s.launched = true;
+              const pa = s.a + t * 1.6;
+              s.from.set(player.position.x + Math.cos(pa) * s.r, player.position.y + 1.2 + Math.sin(s.a * 2) * 0.5, player.position.z + Math.sin(pa) * s.r);
+            } else {
+              const pa = s.a + t * 1.6;
+              dummy.position.set(player.position.x + Math.cos(pa) * s.r, player.position.y + 1.0 + Math.sin(t * 3 + i) * 0.25 + s.r * 0.28, player.position.z + Math.sin(pa) * s.r);
+              dummy.rotation.set(Math.PI / 2 - 0.4, -pa, 0);
+            }
+          }
+          if (s.launched) {
+            const k = Math.min(1, (t - s.delay) / s.dur);
+            dummy.position.copy(s.from).lerp(s.to, k * k);
+            dummy.lookAt(s.to.x, s.to.y - 3, s.to.z);
+            dummy.rotation.x -= Math.PI / 2;
+            if (k >= 1) dummy.position.set(0, -99, 0);
+          }
+          dummy.updateMatrix();
+          wheel.setMatrixAt(i, dummy.matrix);
+        }
+        wheel.instanceMatrix.needsUpdate = true;
+        if (t > 2.6) {
+          ctx.scene.remove(wheel);
+          player.position.y = Math.max(ctx.terrainHeight(player.position.x, player.position.z), player.position.y - 0.5);
+          this.ultActive = false;
+          this.ultCam = 0;
+          ctx.setTimeScale(1);
+          ctx.hud.ultVignette(false);
+          return false;
+        }
+        return true;
+      },
+    });
+    return true;
+  }
+
+  // 地面裂纹贴花（程序化裂纹纹理）
+  spawnCracks(ctx, center, n) {
+    const tex = crackTexture();
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + Math.random();
+      const r = 1.5 + Math.random() * 6;
+      const x = center.x + Math.cos(a) * r, z = center.z + Math.sin(a) * r;
+      const m = new THREE.Mesh(
+        new THREE.PlaneGeometry(2.2 + Math.random() * 2.4, 2.2 + Math.random() * 2.4),
+        new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.85, depthWrite: false }));
+      m.rotation.x = -Math.PI / 2;
+      m.rotation.z = Math.random() * Math.PI * 2;
+      m.position.set(x, ctx.terrainHeight(x, z) + 0.06, z);
+      ctx.scene.add(m);
+      let lt = 0;
+      this.fx.push({ update: (d) => {
+        lt += d;
+        m.material.opacity = Math.max(0, 0.85 - lt * 0.35);
+        if (lt > 2.6) { ctx.scene.remove(m); return false; }
+        return true;
+      } });
+    }
+  }
+
   update(dt) {
     this.mana = Math.min(this.maxMana, this.mana + this.regen * dt);
     for (const k in this.cooldowns) {
       this.cooldowns[k] -= dt;
       if (this.cooldowns[k] <= 0) delete this.cooldowns[k];
     }
+    // 战意脱战衰减
+    if (performance.now() / 1000 - this.lastCombat > 8 && this.fury > 0) {
+      this.fury = Math.max(0, this.fury - 5 * dt);
+    }
+    // 吟唱推进
+    if (this.casting) {
+      this.casting.t -= dt;
+      const frac = 1 - this.casting.t / this.casting.dur;
+      if (this.casting.t <= 0) {
+        const done = this.casting.done;
+        this.casting = null;
+        this._lastCastCtx?.hud.castBar(null);
+        if (this._lastCastCtx?.player) this._lastCastCtx.player.slowFactor = 1;
+        done();
+      } else {
+        this._lastCastCtx?.hud.castBar(frac, this.casting.name);
+      }
+    }
     this.fx = this.fx.filter((f) => f.update(dt));
   }
+}
+
+// 结印/吟唱用的 ctx 记忆（update 内驱动读条）
+Skills.prototype.startCasting = function (ctx) { this._lastCastCtx = ctx; };
+
+// 程序化地面裂纹纹理
+let _crackTex = null;
+function crackTexture() {
+  if (_crackTex) return _crackTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  g.clearRect(0, 0, 128, 128);
+  g.strokeStyle = 'rgba(20,12,6,0.95)';
+  g.lineCap = 'round';
+  for (let b = 0; b < 7; b++) {
+    g.lineWidth = 2.5 + Math.random() * 2;
+    g.beginPath();
+    let x = 64, y = 64, a = (b / 7) * Math.PI * 2 + Math.random() * 0.7;
+    g.moveTo(x, y);
+    for (let s = 0; s < 5; s++) {
+      a += (Math.random() - 0.5) * 0.9;
+      const len = 8 + Math.random() * 14;
+      x += Math.cos(a) * len;
+      y += Math.sin(a) * len;
+      g.lineTo(x, y);
+    }
+    g.stroke();
+  }
+  _crackTex = new THREE.CanvasTexture(c);
+  return _crackTex;
 }
 
 // ---------- 目标点：视心射线打最近灵兽，否则视距落点 ----------
@@ -220,6 +451,8 @@ function damageArea(ctx, center, radius, raw, tag) {
     const c = calcDamage(raw, ctx.lv(), b.lv, b.stats.def, ctx.stats.crit);
     const res = ctx.beasts.damage(b, c.dealt, tag);
     if (res) {
+      ctx.addFury?.(6); // 命中攒战意
+      if (res.killed) ctx.addFury?.(20);
       if (c.note === 'block') ctx.hud.floater(b.mesh.position, `无法破防 -${res.amount}`, 'block');
       else if (c.note === 'resist') ctx.hud.floater(b.mesh.position, `-${res.amount} 护体`, 'resist');
       else ctx.hud.floater(b.mesh.position, `-${res.amount}`, c.crit ? 'crit' : 'hit');

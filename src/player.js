@@ -199,6 +199,7 @@ export class Player {
     this.invulnT = 0;            // 受击无敌帧
     this.lastHurt = -99;
     this.defenseMult = 1;        // 土灵根减伤
+    this.slowFactor = 1;         // 吟唱减速 0.3
     this.onHurt = null;          // (dealt)=>void HUD 反馈
     this.onDeath = null;         // ()=>void 重伤遁返
   }
@@ -343,7 +344,7 @@ export class Player {
     const moving = ix !== 0 || iz !== 0;
 
     if (this.flying) {
-      const speed = input.shift ? FLY_SPEED * 1.6 : FLY_SPEED;
+      const speed = (input.shift ? FLY_SPEED * 1.6 : FLY_SPEED) * this.slowFactor;
       const dir = new THREE.Vector3(ix, 0, iz).normalize().applyAxisAngle(new THREE.Vector3(0, 1, 0), camYaw);
       this.vel.x = dir.x * speed;
       this.vel.z = dir.z * speed;
@@ -372,7 +373,7 @@ export class Player {
       fset('mixamorigRightUpLeg', -0.1, 0, -0.1);
     } else {
       this.inner.rotation.x = 0;
-      const speed = input.shift ? RUN : WALK;
+      const speed = (input.shift ? RUN : WALK) * this.slowFactor;
       const dir = new THREE.Vector3(ix, 0, iz).normalize().applyAxisAngle(new THREE.Vector3(0, 1, 0), camYaw);
       this.vel.x = THREE.MathUtils.lerp(this.vel.x, dir.x * speed * (moving ? 1 : 0), 0.2);
       this.vel.z = THREE.MathUtils.lerp(this.vel.z, dir.z * speed * (moving ? 1 : 0), 0.2);
