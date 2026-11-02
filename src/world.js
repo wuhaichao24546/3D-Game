@@ -27,6 +27,14 @@ function fbm(x, z, octaves = 4) {
 export const WORLD_RADIUS = 190;
 export const WATER_LEVEL = 2.1;
 
+// 蜿蜒灵河：一条过湖心的正弦河道，过弯处略有抖动
+export function riverX(z) {
+  return Math.sin(z * 0.011) * 34 + Math.sin(z * 0.031 + 1.7) * 10;
+}
+export function riverDist(x, z) {
+  return Math.abs(x - riverX(z));
+}
+
 export function terrainHeight(x, z) {
   const d = Math.hypot(x, z);
   let h = 4 + fbm(x * 0.012, z * 0.012, 4) * 14;
@@ -34,6 +42,10 @@ export function terrainHeight(x, z) {
   const ring = Math.max(0, (d - 130) / 60);
   h += ring * ring * 22;
   h -= Math.max(0, 1 - d / 70) * 5;
+  // 河道下切：中心低于水位，两边平滑抬起
+  const rd = riverDist(x, z);
+  const channel = Math.max(0, 1 - rd / 9);
+  h = h * (1 - channel * 0.85) + channel * (WATER_LEVEL - 1.4) + Math.max(0, 1 - rd / 16) * 0.9;
   return h;
 }
 
@@ -69,7 +81,7 @@ export function buildWorld(scene, renderer) {
   u.mieDirectionalG.value = 0.85;
   scene.add(sky);
 
-  scene.fog = new THREE.Fog(0xbfd9d4, 80, 500);
+  scene.fog = new THREE.Fog(0xbfd9d4, 90, 950);
 
   // ---------- stars & moon ----------
   const starGeo = new THREE.BufferGeometry();
@@ -274,6 +286,142 @@ export function buildWorld(scene, renderer) {
   tufts.count = gi;
   scene.add(tufts);
 
+  // ---------- 青竹幽谷（西南区竹林） ----------
+  const bambooStalk = new THREE.CylinderGeometry(0.05, 0.07, 7.5, 5);
+  bambooStalk.translate(0, 3.75, 0);
+  const bambooLeaf = mergeGeometries([
+    new THREE.ConeGeometry(0.7, 1.6, 5).translate(0, 6.9, 0),
+    new THREE.ConeGeometry(0.5, 1.2, 5).translate(0, 7.8, 0),
+  ]);
+  const bambooMat = new THREE.MeshStandardMaterial({ color: 0x5d9153, roughness: 0.9 });
+  const BAMBOO = 600;
+  const stalks = new THREE.InstancedMesh(bambooStalk, bambooMat, BAMBOO);
+  const bleaves = new THREE.InstancedMesh(bambooLeaf, bambooMat, BAMBOO);
+  let bi = 0;
+  for (let i = 0; i < 6000 && bi < BAMBOO; i++) {
+    const x = -60 - rng() * 55, z = 40 + rng() * 55;
+    const h = terrainHeight(x, z);
+    if (h < WATER_LEVEL + 0.5 || h > 13 || riverDist(x, z) < 10) continue;
+    const sc = 0.7 + rng() * 0.9;
+    q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rng() * Math.PI * 2);
+    s.setScalar(sc);
+    m.compose(new THREE.Vector3(x, h, z), q, s);
+    stalks.setMatrixAt(bi, m);
+    bleaves.setMatrixAt(bi, m);
+    stalks.setColorAt(bi, cTint.setHSL(0.26 + rng() * 0.06, 0.4, 0.32 + rng() * 0.14));
+    bleaves.setColorAt(bi, cTint.setHSL(0.3 + rng() * 0.05, 0.5, 0.35 + rng() * 0.15));
+    bi++;
+  }
+  stalks.count = bleaves.count = bi;
+  scene.add(stalks, bleaves);
+
+  // ---------- 石质道宫（东北山脊） ----------
+  const palace = new THREE.Group();
+  const stoneMat = new THREE.MeshStandardMaterial({ map: rockTex, color: 0xb8b4aa, roughness: 1 });
+  const darkRoof = new THREE.MeshStandardMaterial({ color: 0x2c3a44, roughness: 0.65 });
+  const redMat = new THREE.MeshStandardMaterial({ color: 0x8c2f24, roughness: 0.8 });
+  const plat = new THREE.Mesh(new THREE.BoxGeometry(14, 1.2, 11), stoneMat);
+  plat.position.y = 0.6;
+  palace.add(plat);
+  const hall = new THREE.Mesh(new THREE.BoxGeometry(9, 3.2, 6.5), stoneMat);
+  hall.position.y = 2.8;
+  palace.add(hall);
+  const door = new THREE.Mesh(new THREE.BoxGeometry(1.8, 2.4, 0.3), redMat);
+  door.position.set(0, 2.4, 3.3);
+  palace.add(door);
+  for (const px of [-3.6, 3.6]) {
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, 3.2, 8), redMat);
+    col.position.set(px, 2.8, 3.4);
+    palace.add(col);
+  }
+  // 双层歇山顶（简化）
+  const roofA = new THREE.Mesh(new THREE.ConeGeometry(8.2, 2.4, 4), darkRoof);
+  roofA.rotation.y = Math.PI / 4;
+  roofA.position.y = 5.6;
+  roofA.scale.set(1, 1, 0.78);
+  const roofB = new THREE.Mesh(new THREE.ConeGeometry(5.4, 1.7, 4), darkRoof);
+  roofB.rotation.y = Math.PI / 4;
+  roofB.position.y = 7.2;
+  roofB.scale.set(1, 1, 0.78);
+  palace.add(roofA, roofB);
+  // 挑檐翘角
+  for (const [ex, ez] of [[-5.6, -4.4], [5.6, -4.4], [-5.6, 4.4], [5.6, 4.4]]) {
+    const tip = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.35, 1.6), darkRoof);
+    tip.position.set(ex, 5.2, ez);
+    tip.rotation.z = ex > 0 ? -0.35 : 0.35;
+    tip.rotation.x = ez > 0 ? 0.35 : -0.35;
+    palace.add(tip);
+  }
+  // 台阶
+  for (let i = 0; i < 4; i++) {
+    const step = new THREE.Mesh(new THREE.BoxGeometry(4, 0.3, 1), stoneMat);
+    step.position.set(0, 0.15 + i * 0.3, 6.2 - i * 0.9);
+    palace.add(step);
+  }
+  const palacePos = new THREE.Vector3(96, 0, -96);
+  palacePos.y = terrainHeight(palacePos.x, palacePos.z) - 0.3;
+  palace.position.copy(palacePos);
+  palace.rotation.y = -0.7;
+  scene.add(palace);
+
+  // ---------- 秘境洞府入口（正东岩壁） ----------
+  const cave = new THREE.Group();
+  const caveX = 150, caveZ = 20;
+  const caveY = terrainHeight(caveX, caveZ);
+  // 崖壁拱卫巨石
+  for (const [ox, oy, oz, sc] of [[-3.2, 1.6, 0, 3.4], [3.2, 1.6, 0, 3.4], [0, 4.6, -0.5, 3.8], [-4.6, 0.8, 1, 2.2], [4.6, 0.8, 1, 2.2]]) {
+    const r = new THREE.Mesh(rockGeo, rockMat);
+    r.position.set(ox, oy, oz);
+    r.scale.setScalar(sc);
+    cave.add(r);
+  }
+  // 幽暗洞口
+  const caveMouth = new THREE.Mesh(new THREE.SphereGeometry(2.6, 12, 10), new THREE.MeshBasicMaterial({ color: 0x030507 }));
+  caveMouth.position.set(0, 1.4, -1.2);
+  caveMouth.scale.set(1, 1.15, 0.6);
+  cave.add(caveMouth);
+  // 洞口灵光
+  const caveGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0x6fd8ff, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }));
+  caveGlow.scale.setScalar(5.5);
+  caveGlow.position.set(0, 1.6, 0.4);
+  cave.add(caveGlow);
+  cave.position.set(caveX, caveY - 0.5, caveZ);
+  cave.rotation.y = -Math.PI / 2;
+  scene.add(cave);
+
+  // ---------- 发光灵草 ----------
+  const HERB = 220;
+  const herbs = new THREE.InstancedMesh(tuftGeo, new THREE.MeshStandardMaterial({
+    map: bladeTex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.6,
+    emissive: 0x36e0a8, emissiveIntensity: 0.55, color: 0x8fe8c8,
+  }), HERB);
+  let hi = 0;
+  for (let i = 0; i < 4000 && hi < HERB; i++) {
+    const x = (rng() * 2 - 1) * (WORLD_RADIUS - 20);
+    const z = (rng() * 2 - 1) * (WORLD_RADIUS - 20);
+    const rd = riverDist(x, z);
+    if (rd > 26 || rd < 8) continue;
+    const h = terrainHeight(x, z);
+    if (h < WATER_LEVEL + 0.3 || h > 12) continue;
+    q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rng() * Math.PI);
+    s.setScalar(0.5 + rng() * 0.7);
+    m.compose(new THREE.Vector3(x, h, z), q, s);
+    herbs.setMatrixAt(hi++, m);
+  }
+  herbs.count = hi;
+  scene.add(herbs);
+
+  // ---------- 远处群山剪影（多圈层叠，雾化淡出） ----------
+  const farMat = new THREE.MeshBasicMaterial({ color: 0x8fa8bc, fog: true });
+  for (const [dist, n, rh, rw] of [[320, 14, 90, 160], [430, 11, 130, 230], [560, 8, 175, 300]]) {
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + rng() * 0.4;
+      const mt = new THREE.Mesh(new THREE.ConeGeometry(rw * (0.7 + rng() * 0.5), rh * (0.7 + rng() * 0.6), 6), farMat);
+      mt.position.set(Math.cos(a) * dist, rh * 0.3, Math.sin(a) * dist);
+      scene.add(mt);
+    }
+  }
+
   // ---------- floating islands + 殿阁 ----------
   const islandTop = new THREE.MeshStandardMaterial({ map: grassTex, roughness: 1 });
   const islandRock = new THREE.MeshStandardMaterial({ map: rockTex, roughness: 1 });
@@ -379,6 +527,95 @@ export function buildWorld(scene, renderer) {
     clouds.instanceMatrix.needsUpdate = true;
   });
 
+  // ---------- 谷地流云（低空流动雾团） ----------
+  const vCloudGeo = new THREE.IcosahedronGeometry(1, 1);
+  const vCloudMat = new THREE.MeshStandardMaterial({
+    color: 0xf2f6f7, transparent: true, opacity: 0.4, roughness: 1, depthWrite: false,
+  });
+  const VCLOUDS = 36;
+  const vclouds = new THREE.InstancedMesh(vCloudGeo, vCloudMat, VCLOUDS);
+  const vcd = [];
+  for (let i = 0; i < VCLOUDS; i++) {
+    const x = (rng() * 2 - 1) * 200, z = (rng() * 2 - 1) * 200;
+    vcd.push({ x, z, y: terrainHeight(x, z) + 4 + rng() * 10, sx: 10 + rng() * 18, sy: 1.6 + rng() * 1.6, sz: 6 + rng() * 10, speed: 0.9 + rng() * 1.4, ph: rng() * 6 });
+  }
+  scene.add(vclouds);
+  updaters.push((dt, t) => {
+    for (let i = 0; i < VCLOUDS; i++) {
+      const c = vcd[i];
+      c.x += dt * c.speed;
+      if (c.x > 240) c.x = -240;
+      m.compose(new THREE.Vector3(c.x, c.y + Math.sin(t * 0.4 + c.ph) * 1.5, c.z), q.identity(), s.set(c.sx, c.sy, c.sz));
+      vclouds.setMatrixAt(i, m);
+    }
+    vclouds.instanceMatrix.needsUpdate = true;
+  });
+
+  // ---------- 丁达尔光束（云隙阳光光柱，随太阳方向） ----------
+  const shaftTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = 4; c.height = 64;
+    const g2 = c.getContext('2d');
+    const gr = g2.createLinearGradient(0, 0, 0, 64);
+    gr.addColorStop(0, 'rgba(255,246,220,0.85)');
+    gr.addColorStop(0.6, 'rgba(255,246,220,0.25)');
+    gr.addColorStop(1, 'rgba(255,246,220,0)');
+    g2.fillStyle = gr; g2.fillRect(0, 0, 4, 64);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  })();
+  const shafts = new THREE.Group();
+  const shaftMat = new THREE.MeshBasicMaterial({
+    map: shaftTex, transparent: true, opacity: 0, blending: THREE.AdditiveBlending,
+    depthWrite: false, side: THREE.DoubleSide,
+  });
+  for (let i = 0; i < 6; i++) {
+    const sh = new THREE.Mesh(new THREE.PlaneGeometry(6 + rng() * 9, 160), shaftMat);
+    sh.position.set(-80 + rng() * 160, 70 + rng() * 30, -80 + rng() * 160);
+    sh.rotation.y = rng() * Math.PI;
+    shafts.add(sh);
+  }
+  scene.add(shafts);
+
+  // ---------- 空中灵纹（漂浮发光符文） ----------
+  const runeTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 48;
+    const g2 = c.getContext('2d');
+    g2.strokeStyle = '#ffffff'; g2.lineWidth = 3; g2.lineCap = 'round';
+    const r2 = mulberry32(5);
+    for (let i = 0; i < 4; i++) {
+      g2.beginPath();
+      g2.moveTo(8 + r2() * 32, 8 + r2() * 32);
+      g2.quadraticCurveTo(8 + r2() * 32, 8 + r2() * 32, 8 + r2() * 32, 8 + r2() * 32);
+      g2.stroke();
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  })();
+  const runes = [];
+  const runeColors = [0x7fe8c0, 0x9fd0ff, 0xffe9a8];
+  for (let i = 0; i < 42; i++) {
+    const sp2 = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: runeTex, color: runeColors[i % 3], transparent: true, opacity: 0,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
+    const x = (rng() * 2 - 1) * WORLD_RADIUS, z = (rng() * 2 - 1) * WORLD_RADIUS;
+    sp2.position.set(x, terrainHeight(x, z) + 2 + rng() * 14, z);
+    sp2.scale.setScalar(0.5 + rng() * 0.9);
+    sp2.userData = { ph: rng() * 6.3, y0: sp2.position.y, rot: (rng() - 0.5) * 0.8 };
+    scene.add(sp2);
+    runes.push(sp2);
+  }
+  updaters.push((dt, t) => {
+    for (const sp2 of runes) {
+      sp2.position.y = sp2.userData.y0 + Math.sin(t * 0.5 + sp2.userData.ph) * 1.2;
+      sp2.material.rotation += dt * sp2.userData.rot;
+    }
+  });
+
   // ---------- 灵气粒子 ----------
   const MOTES = 600;
   const moteGeo = new THREE.BufferGeometry();
@@ -458,8 +695,8 @@ export function buildWorld(scene, renderer) {
     // fog / exposure / clouds
     tmpC.copy(fogNight).lerp(fogDay, day).lerp(fogDusk, dusk * 0.7);
     scene.fog.color.copy(tmpC);
-    scene.fog.near = 80 - night * 30;
-    scene.fog.far = 500 - night * 180;
+    scene.fog.near = 90 - night * 30;
+    scene.fog.far = 950 - night * 300;
     renderer.toneMappingExposure = 0.55 + day * 0.45;
     cloudMat.color.setScalar(0.25 + day * 0.75);
 
@@ -474,6 +711,15 @@ export function buildWorld(scene, renderer) {
     // 灵气夜间更亮
     moteMat.size = 0.35 + night * 0.2;
     moteMat.opacity = 0.6 + night * 0.4;
+
+    // 丁达尔光束：白天可见，随太阳角度偏向
+    shaftMat.opacity = day * 0.22 * Math.max(0, sunAlt);
+    // 灵纹：昼夜皆可，夜间更亮
+    for (const sp2 of runes) sp2.material.opacity = 0.25 + night * 0.55;
+    // 谷地流云夜间变淡
+    vCloudMat.opacity = 0.12 + day * 0.3;
+    // 洞府灵光夜间更亮
+    caveGlow.material.opacity = 0.35 + night * 0.45;
 
     window.__setDay = (v) => { dayTime = v; };
     return { dayTime, night, day, dusk, sunAlt };

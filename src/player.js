@@ -34,27 +34,57 @@ function buildAccessories(robeMat) {
   const g = new THREE.Group();
   const gold = new THREE.MeshStandardMaterial({ color: 0xd8b96a, metalness: 0.7, roughness: 0.3 });
   const jade = new THREE.MeshStandardMaterial({ color: 0x9fd8bb, roughness: 0.4, emissive: 0x1d3a2a, emissiveIntensity: 0.4 });
+  const hairMat = new THREE.MeshStandardMaterial({ color: 0x0d0b08, roughness: 0.55 });
 
-  // 襦裙：裙摆
-  const skirt = new THREE.Mesh(new THREE.ConeGeometry(0.34, 1.15, 16, 1, true), robeMat);
-  skirt.geometry.translate(0, -0.575, 0);
-  skirt.position.y = 1.02;
-  skirt.scale.set(1.15, 1, 1.05);
+  // 道袍下摆（宽袍大裙，及踝）
+  const skirt = new THREE.Mesh(new THREE.ConeGeometry(0.4, 1.25, 18, 1, true), robeMat);
+  skirt.geometry.translate(0, -0.625, 0);
+  skirt.position.y = 1.06;
+  skirt.scale.set(1.2, 1, 1.1);
   g.add(skirt);
+  // 外袍披幅（背后垂下的袍角）
+  const train = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.95), robeMat);
+  train.position.set(0, 0.62, -0.16);
+  train.rotation.x = 0.12;
+  g.add(train);
 
-  // 腰封 + 玉带
-  const sash = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.05, 8, 20), gold);
-  sash.rotation.x = Math.PI / 2;
-  sash.position.y = 1.02;
+  // 腰封 + 玉带钩（深色腰封配金边、碧玉）
+  const sash = new THREE.Mesh(new THREE.CylinderGeometry(0.29, 0.31, 0.14, 18, 1, true), robeMat);
+  sash.position.y = 1.03;
   g.add(sash);
+  const sashTrim = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.018, 6, 24), gold);
+  sashTrim.rotation.x = Math.PI / 2;
+  sashTrim.position.y = 1.09;
+  g.add(sashTrim);
+  const jadeDisc = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.02, 12), jade);
+  jadeDisc.rotation.x = Math.PI / 2;
+  jadeDisc.position.set(0, 1.0, 0.31);
+  g.add(jadeDisc);
 
-  // 发髻 + 玉簪
-  const bun = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 8), new THREE.MeshStandardMaterial({ color: 0x14100c, roughness: 0.9 }));
-  const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.3, 6), jade);
+  // 高髻 + 黑金发冠 + 横穿玉簪 + 后披长发
+  const bun = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 8), hairMat);
+  const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, 0.09, 8, 1, true), gold);
+  crown.position.y = 0.06;
+  const crownGem = new THREE.Mesh(new THREE.SphereGeometry(0.018, 8, 6), jade);
+  crownGem.position.set(0, 0.08, 0.05);
+  const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.34, 6), jade);
   pin.rotation.z = Math.PI / 2;
   pin.position.x = 0.02;
+  pin.position.y = 0.03;
+  const pinTip = new THREE.Mesh(new THREE.SphereGeometry(0.016, 6, 6), jade);
+  pinTip.position.set(-0.17, 0.03, 0);
   const bunGroup = new THREE.Group();
-  bunGroup.add(bun, pin);
+  bunGroup.add(bun, crown, crownGem, pin, pinTip);
+  // 后披长发（三缕及腰）
+  const hairGroup = new THREE.Group();
+  for (const [hx, hw, hl] of [[0, 0.09, 0.62], [-0.055, 0.05, 0.52], [0.055, 0.05, 0.52]]) {
+    const strand = new THREE.Mesh(new THREE.ConeGeometry(hw, hl, 6), hairMat);
+    strand.geometry.translate(0, -hl / 2, 0);
+    strand.position.set(hx, -0.02, -0.075);
+    strand.rotation.x = 0.18;
+    hairGroup.add(strand);
+  }
+  bunGroup.add(hairGroup);
 
   // 背负长剑
   const sword = new THREE.Group();
@@ -107,7 +137,7 @@ export class Player {
     const robeTex = new THREE.TextureLoader().load('textures/robe.jpg');
     robeTex.colorSpace = THREE.SRGBColorSpace;
     robeTex.wrapS = robeTex.wrapT = THREE.RepeatWrapping;
-    const robeMat = new THREE.MeshStandardMaterial({ map: robeTex, color: 0x9fc8a8, roughness: 0.75, side: THREE.DoubleSide });
+    const robeMat = new THREE.MeshStandardMaterial({ map: robeTex, color: 0x2e4d5e, roughness: 0.75, side: THREE.DoubleSide });
     const acc = buildAccessories(robeMat);
     this.inner.add(acc.group);
     this.swordMesh = acc.sword;
@@ -116,8 +146,20 @@ export class Player {
     if (spine) { acc.sword.position.set(0.02, 0.18, -16); acc.sword.scale.setScalar(100); spine.add(acc.sword); }
     else this.inner.add(acc.sword.translateY(1.55));
     const head = this.bones['mixamorigHead']?.bone;
-    if (head) { acc.bunGroup.position.set(0, 22, 2); acc.bunGroup.scale.setScalar(100); head.add(acc.bunGroup); }
+    if (head) { acc.bunGroup.position.set(0, 21, 3); acc.bunGroup.scale.setScalar(100); head.add(acc.bunGroup); }
     else this.inner.add(acc.bunGroup.translateY(1.78));
+
+    // 宽袖（挂在两个小臂骨骼上的喇叭袖）
+    for (const side of ['Left', 'Right']) {
+      const fore = this.bones[`mixamorig${side}ForeArm`]?.bone;
+      if (!fore) continue;
+      const sleeve = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.55, 12, 1, true), robeMat);
+      sleeve.geometry.translate(0, 0.275, 0);
+      sleeve.position.set(0, 8, 0);
+      sleeve.scale.setScalar(100);
+      sleeve.rotation.x = Math.PI;
+      fore.add(sleeve);
+    }
 
     this.flySword = buildFlySword();
     this.flySword.visible = false;
