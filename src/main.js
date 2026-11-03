@@ -15,7 +15,9 @@ import { Inventory, Pickups, ITEMS } from './items.js';
 import { Skills, SKILL_DEFS } from './skills.js';
 import { loadSave, hasSave, clearSave, writeSave } from './save.js';
 import { daoLevel, playerStats, calcDamage } from './combat.js';
-import { Gear, GRADES } from './gear.js';
+import { Gear, GRADES, genEquip } from './gear.js';
+import { NPCManager } from './npc.js';
+import { QuestLog } from './quests.js';
 
 // ---------- renderer / scene ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -133,7 +135,65 @@ async function start() {
     b.onBossCast = (name) => hud.bossCast(name);
     if (window.__game) window.__game.beasts = b;
   });
-  window.__game = { scene, camera, player, beasts: null, world, THREE, renderer };
+
+  // ---------- P2：NPC（掌门/弟子/掌柜/引路） ----------
+  const npcs = new NPCManager(scene, terrainHeight);
+  const quests = new QuestLog();
+  window.__game = window.__game || {};
+  window.__game.quests = quests; window.__game.npcs = npcs;
+
+  function rewardQuest(q) {
+    const r = {
+      q1: () => { cult.addExp(300); cult.spiritStones += 60; },
+      q2: () => { cult.addExp(200); inventory.add('pill_exp', 2); },
+      q3: () => { cult.addExp(400); gear.add(genEquip(lv, 2)); },
+      q4: () => { cult.addExp(1000); cult.spiritStones += 2000; gear.add(genEquip(lv, 4)); },
+    }[q.id];
+    if (r) r();
+    hud.showBanner(`任务完成 · ${q.title}｜${q.rewardText}`, 3600);
+    hud.setQuest(quests.trackerLines(inventory));
+    persist();
+  }
+
+  // 掌门对话
+  npcs.add({ id: 'master', name: '掌门·青玄子', x: 92, z: -92, robe: 0x2a3d5e, hat: 'crown',
+    talk: () => {
+      const q = quests.current;
+      const opts = [];
+      if (q && quests.ready(inventory)) {
+        opts.push({ label: `交付「${q.title}」`, fn: () => { const done = quests.turnIn(inventory); rewardQuest(done); hud.closeDialogue(); } });
+      }
+      const text = !q ? '道友修为已深，青霄宗上下钦佩。山下妖兽，仍须你多费心。'
+        : quests.ready(inventory) ? `「${q.title}」已成。好，好。` : q.desc;
+      opts.push({ label: '离开', fn: () => hud.closeDialogue() });
+      return { name: '掌门·青玄子', text, options: opts };
+    } });
+  npcs.add({ id: 'disciple1', name: '执法弟子·寒松', x: 88, z: -88, robe: 0x3a4d6e,
+    talk: () => ({ name: '执法弟子·寒松', text: '掌门在殿前候你。山野凶兽渐多，出行当心。', options: [{ label: '离开', fn: () => hud.closeDialogue() }] }) });
+  npcs.add({ id: 'disciple2', name: '执事弟子·青柏', x: 98, z: -99, robe: 0x3a4d6e,
+    talk: () => ({ name: '执事弟子·青柏', text: '灵湖玄蛟近日躁动，掌门已颁「镇湖除蛟」令——非筑基后期不可近。', options: [{ label: '离开', fn: () => hud.closeDialogue() }] }) });
+
+  // 坊市掌柜：买卖
+  const SELL_PRICE = { mat_fox_core: 12, mat_fox_fur: 6, mat_deer_antler: 10, mat_turtle_shell: 12, mat_wolf_core: 20, mat_wolf_fang: 8, mat_horse_mane: 8, mat_bird_feather: 10, mat_jiao_scale: 200 };
+  function refreshShop() {
+    const buy = [
+      { label: '回春散（回血 40）', price: 30, can: cult.spiritStones >= 30, fn: () => { cult.spiritStones -= 30; inventory.add('pill_heal', 1); refreshShop(); } },
+      { label: '聚灵丹（修为+25）', price: 80, can: cult.spiritStones >= 80, fn: () => { cult.spiritStones -= 80; inventory.add('pill_exp', 1); refreshShop(); } },
+      { label: '凡品装备匣', price: 120, can: cult.spiritStones >= 120, fn: () => { cult.spiritStones -= 120; gear.add(genEquip(lv, 0)); refreshShop(); } },
+    ];
+    const sell = inventory.list().filter(e => e.def.kind === 'material').map(e => ({
+      label: `${e.def.name} ×${e.n}`, price: SELL_PRICE[e.id] || 5,
+      fn: () => { inventory.remove(e.id, 1); cult.spiritStones += SELL_PRICE[e.id] || 5; refreshShop(); },
+    }));
+    hud.renderShop(cult.spiritStones, buy, sell);
+  }
+  npcs.add({ id: 'merchant', name: '万宝阁·钱掌柜', x: 44, z: 76, robe: 0x6e4d2a, hat: 'straw',
+    talk: () => ({ name: '万宝阁·钱掌柜', text: '客官里边请——丹药符材、法器珍玩，童叟无欺。', options: [
+      { label: '看看货（打开商店）', fn: () => { hud.closeDialogue(); refreshShop(); hud.openShop(); } },
+      { label: '离开', fn: () => hud.closeDialogue() }] }) });
+  npcs.add({ id: 'guide', name: '引路师妹·小竹', x: 46, z: 70, robe: 0x5d7a5a,
+    talk: () => ({ name: '引路师妹·小竹', text: '师兄安好。东北山脊的青霄宗可在寻掌门接取试炼；村中钱掌柜处可沽丹药。左键剑气，R 键大招，T 键灵压阵。', options: [{ label: '离开', fn: () => hud.closeDialogue() }] }) });
+  window.__game = Object.assign(window.__game || {}, { scene, camera, player, beasts: null, world, THREE, renderer });
   window.__setCam = (y, p) => { camYaw = y; if (p !== undefined) camPitch = p; };
 
   // ---------- 画质档：高(2x+2048阴影+泛光) 中(1.5x+1024阴影) 低(1x无阴影) ----------
@@ -213,6 +273,7 @@ async function start() {
       cult.spiritStones = s.spiritStones || 0;
       inventory.fromJSON(s.inv || []);
       gear.fromJSON(s.gear);
+      quests.fromJSON(s.quests);
       recalc();
       player.hp = Math.max(1, Math.min(player.maxHp, s.hp || player.maxHp));
       skills.mana = Math.min(skills.maxMana, s.mana || skills.maxMana);
@@ -282,6 +343,10 @@ async function start() {
       shakeAmp = Math.max(shakeAmp, 0.5);
       hud.showBanner('千年玄蛟已诛 · 天地同贺', 3200);
     }
+    if (quests.onKill(def, { elite: b.elite, boss: b.boss })) {
+      hud.setQuest(quests.trackerLines(inventory));
+      if (quests.ready(inventory)) hud.showBanner('任务目标达成 · 回禀掌门', 2600);
+    }
   }
 
   const skillCtx = {
@@ -311,6 +376,7 @@ async function start() {
       pos: [player.position.x, player.position.y, player.position.z],
       inv: inventory.toJSON(),
       gear: gear.toJSON(),
+      quests: quests.toJSON(),
     });
   }
   setInterval(persist, 30000);
@@ -329,6 +395,13 @@ async function start() {
     if (keymap[e.code]) { input[keymap[e.code]] = true; e.preventDefault(); }
     else if (e.code === 'KeyF') { player.toggleFly(); hud.showBanner(player.flying ? '御剑而行' : '收剑而立', 1200); }
     else if (e.code === 'KeyZ') { player.toggleMeditate(); hud.showBanner(player.meditating ? '入定修炼' : '出定', 1200); }
+    else if (e.code === 'KeyE') {
+      if (hud.dialogueOpen) { hud.closeDialogue(); return; }
+      const n = npcs.nearest(player.position, 4);
+      if (n) { const d = n.talk(); hud.showDialogue(d.name, d.text, d.options); }
+      return;
+    }
+    else if (e.code === 'Escape') { hud.closeDialogue(); hud.closeShop(); return; }
     else if (e.code === 'KeyB') {
       const open = hud.toggleInventory(inventory, usePill, gear, onGear);
       if (open) document.exitPointerLock?.();
@@ -456,6 +529,10 @@ async function start() {
     bursts.update(dt);
     skills.update(dt);
     if (beasts) { beasts.domain = skills.domain; hud.bossBar(beasts.boss); }
+    npcs.update(dt, player.position, t);
+    hud.setQuest(quests.trackerLines(inventory));
+    const nearNpc = npcs.nearest(player.position, 4);
+    hud.interactTip(!hud.dialogueOpen && nearNpc ? `按 <b>E</b> 与 ${nearNpc.name} 对话` : null);
     pickups.update(dt, player.position, (d) => {
       if (d.stones) {
         cult.spiritStones += d.stones;

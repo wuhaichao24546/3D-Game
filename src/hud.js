@@ -42,7 +42,75 @@ export class HUD {
     this.bossFillEl = document.getElementById('boss-fill');
     this.bossCastEl = document.getElementById('boss-cast');
     this.killBannerEl = document.getElementById('kill-banner');
+    this.questTrackerEl = document.getElementById('quest-tracker');
+    this.interactTipEl = document.getElementById('interact-tip');
+    this.dlgEl = document.getElementById('dialogue');
+    this.dlgNameEl = document.getElementById('dlg-name');
+    this.dlgTextEl = document.getElementById('dlg-text');
+    this.dlgOptsEl = document.getElementById('dlg-options');
+    this.shopEl = document.getElementById('shop');
+    this.shopStonesEl = document.getElementById('shop-stones');
+    this.shopBuyEl = document.getElementById('shop-buy');
+    this.shopSellEl = document.getElementById('shop-sell');
+    this.shopOpen = false;
   }
+
+  // 任务追踪
+  setQuest(lines) {
+    const html = lines.filter(Boolean).map((l, i) =>
+      i === 0 ? `<div class="qt-title">${l}</div>`
+        : l.startsWith('✓') ? `<div class="qt-done">${l}</div>`
+        : `<div>${l}</div>`).join('');
+    if (html !== this._qtHtml) { this._qtHtml = html; this.questTrackerEl.innerHTML = html; }
+  }
+
+  interactTip(text) {
+    if (!text) { this.interactTipEl.classList.add('hidden'); return; }
+    this.interactTipEl.innerHTML = text;
+    this.interactTipEl.classList.remove('hidden');
+  }
+
+  // 对话：options = [{label, fn, disabled}]
+  showDialogue(name, text, options) {
+    this.dlgNameEl.textContent = name;
+    this.dlgTextEl.textContent = text;
+    this.dlgOptsEl.innerHTML = '';
+    for (const o of options) {
+      const b = document.createElement('span');
+      b.className = 'dlg-opt' + (o.disabled ? ' dis' : '');
+      b.textContent = o.label;
+      if (!o.disabled && o.fn) b.onclick = () => o.fn();
+      this.dlgOptsEl.appendChild(b);
+    }
+    this.dlgEl.classList.remove('hidden');
+    document.exitPointerLock?.();
+  }
+  closeDialogue() { this.dlgEl.classList.add('hidden'); }
+  get dialogueOpen() { return !this.dlgEl.classList.contains('hidden'); }
+
+  // 商店：buy/sell = [{label,price,can,fn}]；stones 当前灵石
+  renderShop(stones, buy, sell) {
+    this.shopStonesEl.textContent = `灵石 × ${stones}`;
+    const rows = (el, list, verb) => {
+      el.innerHTML = '';
+      for (const it of list) {
+        const r = document.createElement('div');
+        r.className = 'shop-row';
+        r.innerHTML = `<span>${it.label}</span><span><span class="price">${it.price} 灵石</span></span>`;
+        const btn = document.createElement('button');
+        btn.textContent = verb;
+        btn.disabled = it.can === false;
+        btn.onclick = () => it.fn();
+        r.lastChild.appendChild(btn);
+        el.appendChild(r);
+      }
+      if (!list.length) el.innerHTML = '<div class="shop-row"><span style="color:#7a8a7f">暂无</span></div>';
+    };
+    rows(this.shopBuyEl, buy, '买');
+    rows(this.shopSellEl, sell, '卖');
+  }
+  openShop() { this.shopEl.classList.remove('hidden'); this.shopOpen = true; document.exitPointerLock?.(); }
+  closeShop() { this.shopEl.classList.add('hidden'); this.shopOpen = false; }
 
   // Boss 横幅血条（b 为 Boss 对象或 null）
   bossBar(b) {
