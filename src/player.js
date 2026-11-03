@@ -190,15 +190,22 @@ function buildAccessories(robeMat, builtinRobe = false) {
 
 export class Player {
   static async create(scene, terrainHeight, spawn) {
-    // 写实修士（MakeHuman CC0 人体 + 汉服，Mixamo 骨架）；加载失败回退旧模型
-    let gltf, realistic = true;
-    try { gltf = await loadGLB('models/Cultivator.glb'); }
-    catch (e) { console.warn('Cultivator.glb 加载失败，回退 Michelle', e); gltf = await loadGLB('models/Michelle.glb'); realistic = false; }
-    return new Player(scene, terrainHeight, spawn, gltf, realistic);
+    // 主角模型优先级：三视图生成的贴图模型 → MakeHuman 写实修士 → Michelle（均为 Mixamo 骨架）
+    const order = [['models/CultivatorScan.glb', 'scan'], ['models/Cultivator.glb', 'mh'], ['models/Michelle.glb', 'legacy']];
+    for (const [url, kind] of order) {
+      try { return new Player(scene, terrainHeight, spawn, await loadGLB(url), kind); }
+      catch (e) { if (kind === 'legacy') throw e; console.warn(`${url} 加载失败，回退下一个模型`, e); }
+    }
   }
 
-  constructor(scene, terrainHeight, spawn, michelle, realistic = false) {
+  constructor(scene, terrainHeight, spawn, michelle, kind = 'legacy') {
     this.terrainHeight = terrainHeight;
+    const realistic = kind !== 'legacy', scan = kind === 'scan';
+    this.modelKind = kind;
+    // 各模型的站姿参数：手臂下垂角、屈肘、腿开合、走路摆臂下垂、飞行手臂 [后摆, 下垂]
+    this.rig = scan
+      ? { arm: 1.5, fore: 0.24, leg: -0.062, walkLeg: -0.062, walkArm: 1.3, flyArm: [-0.6, 1.15] }
+      : { arm: 1.15, fore: 0, leg: 0.05, walkLeg: 0.06, walkArm: 0.95, flyArm: [-0.9, 0.35] };
 
     const model = michelle.scene;
     // 归一化到真实身高（男修 1.78，旧模型 1.72）
@@ -241,7 +248,13 @@ export class Player {
       sheen: 0.8, sheenRoughness: 0.75, sheenColor: new THREE.Color(realistic ? 0x8a9ccc : 0x9cc4c8),
     });
     robeMat.normalScale.set(1.2, 1.2);
-    if (realistic) {
+    if (scan) {
+      model.traverse((o) => {
+        if (!o.isMesh) return;
+        const map = o.material.map;
+        o.material = new THREE.MeshPhysicalMaterial({ map, roughness: 0.82, metalness: 0, side: THREE.DoubleSide, sheen: 0.45, sheenRoughness: 0.7, sheenColor: new THREE.Color(0x7d8db5) });
+      });
+    } else if (realistic) {
       const innerMat = new THREE.MeshPhysicalMaterial({ color: 0xf0eee8, roughness: 0.9, sheen: 0.6, sheenColor: new THREE.Color(0xffffff), normalMap: robeMat.normalMap, side: THREE.DoubleSide });
       const sashMat = robeMat.clone(); sashMat.color.set(0x1c2650);
       const mats = {
@@ -258,10 +271,11 @@ export class Player {
     this.swordMesh = acc.sword;
     // 剑挂背后、发髻上头
     const spine = this.bones['mixamorigSpine2']?.bone;
-    if (spine) { acc.sword.position.set(0.02, 0.18, -16); acc.sword.scale.setScalar(100); spine.add(acc.sword); }
+    if (spine) { acc.sword.position.set(0.02, 0.18, scan ? -20 : -16); acc.sword.scale.setScalar(100); spine.add(acc.sword); }
     else this.inner.add(acc.sword.translateY(1.55));
     const head = this.bones['mixamorigHead']?.bone;
-    if (head) {
+    if (scan) { /* 发髻、长发、广袖都在模型里 */ }
+    else if (head) {
       if (realistic) acc.bunGroup.position.set(0, 21, -3); else acc.bunGroup.position.set(0, 21, 3);
       acc.bunGroup.scale.setScalar(100); head.add(acc.bunGroup);
       if (realistic) { acc.hairGroup.position.set(0, 15, -8); acc.hairGroup.scale.setScalar(100); head.add(acc.hairGroup); }
@@ -270,7 +284,7 @@ export class Player {
     // 宽袖（挂在两个小臂骨骼上的喇叭袖）
     for (const side of ['Left', 'Right']) {
       const fore = this.bones[`mixamorig${side}ForeArm`]?.bone;
-      if (!fore) continue;
+      if (!fore || scan) continue;
       const sleeve = realistic
         ? new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.06, 0.4, 20, 4, true), robeMat)
         : new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.55, 12, 1, true), robeMat);
@@ -413,25 +427,28 @@ export class Player {
       set('mixamorigSpine1', 0.05, 0, 0);
       return;
     }
+    const rg = this.rig;
+    set('mixamorigLeftForeArm', 0, -rg.fore, 0);
+    set('mixamorigRightForeArm', 0, rg.fore, 0);
     if (spd > 0.5) {
       this.animT += dt * (4 + runK * 7);
       const s = Math.sin(this.animT), c = Math.cos(this.animT);
       const amp = 0.35 + runK * 0.35;
-      set('mixamorigLeftUpLeg', s * amp, 0, 0.06);
-      set('mixamorigRightUpLeg', -s * amp, 0, -0.06);
+      set('mixamorigLeftUpLeg', s * amp, 0, rg.walkLeg);
+      set('mixamorigRightUpLeg', -s * amp, 0, -rg.walkLeg);
       set('mixamorigLeftLeg', Math.max(0, -c) * amp * 1.4 + 0.1, 0, 0);
       set('mixamorigRightLeg', Math.max(0, c) * amp * 1.4 + 0.1, 0, 0);
-      set('mixamorigLeftArm', -s * amp * 0.55, 0, -0.95);
-      set('mixamorigRightArm', s * amp * 0.55, 0, 0.95);
+      set('mixamorigLeftArm', -s * amp * 0.55, 0, -rg.walkArm);
+      set('mixamorigRightArm', s * amp * 0.55, 0, rg.walkArm);
       set('mixamorigSpine1', runK * 0.12, s * 0.05, 0);
     } else {
       this.animT += dt * 1.4;
       const br = Math.sin(this.animT) * 0.03;
       set('mixamorigSpine1', br, 0, 0);
-      set('mixamorigLeftArm', 0, 0, -1.15 + br);
-      set('mixamorigRightArm', 0, 0, 1.15 - br);
-      set('mixamorigLeftUpLeg', 0, 0, 0.05);
-      set('mixamorigRightUpLeg', 0, 0, -0.05);
+      set('mixamorigLeftArm', 0, 0, -rg.arm + br);
+      set('mixamorigRightArm', 0, 0, rg.arm - br);
+      set('mixamorigLeftUpLeg', 0, 0, rg.leg);
+      set('mixamorigRightUpLeg', 0, 0, -rg.leg);
       set('mixamorigLeftLeg', 0.06, 0, 0);
       set('mixamorigRightLeg', 0.06, 0, 0);
     }
@@ -488,8 +505,9 @@ export class Player {
         const ref = fb[name]; if (!ref) return;
         ref.bone.quaternion.copy(ref.rest).multiply(new THREE.Quaternion().setFromEuler(armEuler(name, x, y, z)));
       };
-      fset('mixamorigLeftArm', -0.9, 0, -0.35);
-      fset('mixamorigRightArm', -0.9, 0, 0.35);
+      const [fax, faz] = this.rig.flyArm;
+      fset('mixamorigLeftArm', fax, 0, -faz);
+      fset('mixamorigRightArm', fax, 0, faz);
       fset('mixamorigLeftUpLeg', 0.15, 0, 0.1);
       fset('mixamorigRightUpLeg', -0.1, 0, -0.1);
     } else {
