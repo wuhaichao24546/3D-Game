@@ -463,3 +463,62 @@ export const rainbowTex = () => canvasTex(512, 256, (g, w, h) => {
     g.beginPath(); g.arc(w / 2, h, h * 0.92 - i * 7, Math.PI, 0); g.stroke();
   });
 }, false);
+
+// 雷剑剑身：暗钢底 + 回纹刻槽 + 蓝紫雷纹（发光层单独输出）
+export function thunderSwordTex() {
+  const drawBase = (g, w, h) => {
+    const r = mulberry(88);
+    const gr = g.createLinearGradient(0, 0, w, 0);
+    gr.addColorStop(0, '#1a2030'); gr.addColorStop(0.5, '#2e3a52'); gr.addColorStop(1, '#151c2a');
+    g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    // 锻纹噪点
+    for (let i = 0; i < 700; i++) {
+      g.fillStyle = `rgba(${140 + r() * 60},${170 + r() * 60},${220},${r() * 0.05})`;
+      g.fillRect(r() * w, r() * h, 1.5, 1.5);
+    }
+    // 中央剑脊亮线
+    g.fillStyle = 'rgba(150,180,230,0.35)'; g.fillRect(w / 2 - 1.5, 0, 3, h);
+    // 回纹刻槽（连续方折纹）
+    g.strokeStyle = 'rgba(8,10,18,0.85)'; g.lineWidth = 3;
+    const cell = 14;
+    g.beginPath();
+    for (let y = 8; y < h - 8; y += cell * 1.6) {
+      const x0 = w * 0.18, x1 = w * 0.82;
+      g.moveTo(x0, y); g.lineTo(x1 - cell, y); g.lineTo(x1 - cell, y + cell);
+      g.lineTo(x0 + cell, y + cell); g.lineTo(x0 + cell, y + cell * 0.45);
+      g.lineTo(x1 - cell * 1.6, y + cell * 0.45);
+    }
+    g.stroke();
+    // 边缘暗纹
+    g.strokeStyle = 'rgba(10,12,22,0.6)'; g.lineWidth = 1.4;
+    g.strokeRect(3, 2, w - 6, h - 4);
+  };
+  const drawGlow = (g, w, h) => {
+    const r = mulberry(97);
+    g.fillStyle = '#000'; g.fillRect(0, 0, w, h);
+    // 主干闪电：自上而下的折线 + 分叉
+    const bolt = (x, y0, y1, seg, lw, alpha) => {
+      g.strokeStyle = `rgba(140,190,255,${alpha})`; g.lineWidth = lw;
+      g.shadowColor = 'rgba(120,160,255,0.9)'; g.shadowBlur = 6;
+      g.beginPath(); g.moveTo(x, y0);
+      let y = y0;
+      while (y < y1) {
+        y += (y1 - y0) / seg;
+        x += (r() - 0.5) * w * 0.3;
+        g.lineTo(x, Math.min(y, y1));
+        if (r() < 0.3) { // 分叉
+          const bx = x + (r() - 0.5) * w * 0.5, by = y + r() * h * 0.08;
+          g.moveTo(x, y); g.lineTo(bx, by); g.moveTo(x, y);
+        }
+      }
+      g.stroke(); g.shadowBlur = 0;
+    };
+    bolt(w * 0.5, 0, h, 9, 2.2, 0.95);
+    bolt(w * 0.28, h * 0.15, h * 0.85, 7, 1.2, 0.7);
+    bolt(w * 0.74, h * 0.1, h * 0.9, 8, 1.4, 0.75);
+  };
+  return {
+    map: canvasTex(96, 512, drawBase, false),
+    emissive: canvasTex(96, 512, drawGlow, false, false),
+  };
+}

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { thunderSwordTex } from './tex.js';
 
 const WALK = 6, RUN = 11, FLY_SPEED = 20;
 const GRAVITY = 26, JUMP_V = 9.5;
@@ -142,15 +143,46 @@ function buildAccessories(robeMat, builtinRobe = false) {
     bunGroup.add(hairGroup);
   }
 
-  // 背负长剑
+  // 背负雷剑：暗钢回纹剑身 + 龙纹剑鉓 + 缠绳柄 + 蓝色雷光
   const sword = new THREE.Group();
-  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.055, 1.3, 0.016),
-    new THREE.MeshStandardMaterial({ color: 0xbfd6d2, metalness: 0.9, roughness: 0.25 }));
-  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.045, 0.05), gold);
-  guard.position.y = -0.65;
-  const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.24, 6), new THREE.MeshStandardMaterial({ color: 0x2a1f14, roughness: 0.9 }));
-  grip.position.y = -0.79;
-  sword.add(blade, guard, grip);
+  const { map: bladeMap, emissive: bladeGlow } = thunderSwordTex();
+  const boltMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff, map: bladeMap, metalness: 0.92, roughness: 0.28,
+    emissive: 0x6faaff, emissiveMap: bladeGlow, emissiveIntensity: 1.6,
+  });
+  const darkSteel = new THREE.MeshStandardMaterial({ color: 0x2b3244, metalness: 0.9, roughness: 0.35 });
+  // 剑身（主体 + 剑尖），剑尖微收
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.075, 1.05, 0.014), boltMat);
+  blade.position.y = 0.62;
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.22, 4), boltMat);
+  tip.scale.set(0.75, 1, 0.19); tip.position.y = 1.255;
+  // 龙纹剑鉓：横梁两端上翘爪尖 + 中央嵌雷珠
+  const guardBar = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.03, 0.045), darkSteel);
+  guardBar.position.y = 0.085;
+  const clawGeo = new THREE.ConeGeometry(0.018, 0.075, 5);
+  const clawL = new THREE.Mesh(clawGeo, darkSteel); clawL.position.set(-0.1, 0.115, 0); clawL.rotation.z = 0.5;
+  const clawR = new THREE.Mesh(clawGeo, darkSteel); clawR.position.set(0.1, 0.115, 0); clawR.rotation.z = -0.5;
+  const orb = new THREE.Mesh(new THREE.SphereGeometry(0.022, 10, 8),
+    new THREE.MeshStandardMaterial({ color: 0x88bbff, emissive: 0x5599ff, emissiveIntensity: 2.4, roughness: 0.2 }));
+  orb.position.y = 0.085;
+  // 缠绳剑柄 + 柄端云纹剑首
+  const gripCore = new THREE.Mesh(new THREE.CylinderGeometry(0.021, 0.023, 0.26, 8),
+    new THREE.MeshStandardMaterial({ color: 0x141018, roughness: 0.85 }));
+  gripCore.position.y = -0.06;
+  const wrapMat = new THREE.MeshStandardMaterial({ color: 0x3a3f52, roughness: 0.75, metalness: 0.2 });
+  const wrap = new THREE.Mesh(new THREE.TorusGeometry(0.0245, 0.005, 6, 24), wrapMat);
+  wrap.rotation.x = Math.PI / 2; wrap.scale.y = 0.85;
+  // 螺旋缠绳：多圈环沿柄下排
+  for (let i = 0; i < 7; i++) {
+    const wr = wrap.clone(); wr.position.y = 0.04 - i * 0.035; sword.add(wr);
+  }
+  const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.03, 10, 8), darkSteel);
+  pommel.position.y = -0.2; pommel.scale.set(1, 0.7, 1);
+  const pommelRing = new THREE.Mesh(new THREE.TorusGeometry(0.033, 0.006, 6, 16), gold);
+  pommelRing.position.y = -0.215; pommelRing.rotation.x = Math.PI / 2;
+  sword.add(blade, tip, guardBar, clawL, clawR, orb, gripCore, pommel, pommelRing);
+  sword.userData.boltMat = boltMat;
+  sword.userData.orbMat = orb.material;
   sword.rotation.z = 0.6;
 
   return { group: g, bunGroup, hairGroup, sword, gold };
@@ -475,6 +507,15 @@ export class Player {
 
       const spd = Math.hypot(this.vel.x, this.vel.z);
       this.animate(dt, spd);
+    }
+
+    // 雷剑雷光闪烁：基础呼吸 + 随机电弧爆闪
+    if (this.swordMesh?.userData.boltMat) {
+      this._boltT = (this._boltT || 0) + dt;
+      const base = 1.3 + Math.sin(this._boltT * 7.3) * 0.35;
+      const spike = Math.random() < dt * 2.2 ? 1.6 : 0;
+      this.swordMesh.userData.boltMat.emissiveIntensity = base + spike;
+      this.swordMesh.userData.orbMat.emissiveIntensity = 2.2 + spike * 1.5;
     }
 
     const d = Math.hypot(p.x, p.z);
