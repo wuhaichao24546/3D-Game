@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { humanBase, makeHuman } from './humans.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
   mulberry, woodTex, thatchTex, tileTex, wovenTex, latticeTex, talismanTex, runeCircleTex,
@@ -220,7 +221,23 @@ export function buildRealm(scene, ctx) {
       smokePts.push(smoke.applyMatrix4(g.matrix).add(V(S.x, S.h, S.z)));
     }
     // 菜畦 + 竹篱
-    const cropGeo = new THREE.IcosahedronGeometry(0.28, 0);
+    // 白菜：外层敞开的弧形菜叶 + 内层包心（球壳片拼合）
+    const cropGeo = (() => {
+      const parts = [];
+      const leaf = (r, ang, tilt, y) => {
+        const g = new THREE.SphereGeometry(r, 10, 6, -0.45 * Math.PI, 0.9 * Math.PI, 0, Math.PI * 0.55);
+        g.scale(1, 1.25, 0.45);
+        g.rotateX(-tilt); g.translate(0, y, 0); g.rotateY(ang);
+        return g;
+      };
+      for (let k = 0; k < 7; k++) parts.push(leaf(0.2, (k / 7) * Math.PI * 2, 1.0, 0.02));
+      for (let k = 0; k < 5; k++) parts.push(leaf(0.14, (k / 5) * Math.PI * 2 + 0.4, 0.35, 0.04));
+      const heart = new THREE.SphereGeometry(0.1, 10, 8); heart.scale(1, 1.25, 1); heart.translate(0, 0.12, 0);
+      parts.push(heart);
+      return mergeGeometries(parts.map((g) => g.toNonIndexed()));
+    })();
+    crop.side = THREE.DoubleSide;
+    crop.roughness = 0.55;
     const cropsIM = new THREE.InstancedMesh(cropGeo, crop, 420);
     let ci = 0;
     const m4 = new THREE.Matrix4();
@@ -230,7 +247,7 @@ export function buildRealm(scene, ctx) {
       village.add(mesh(new THREE.BoxGeometry(pw, 0.25, pd), soil, lx, 0.1, lz));
       for (let r = 0; r < pd / 0.9 - 1; r++) for (let c = 0; c < pw / 0.7 - 1; c++) {
         if (ci >= 420) break;
-        m4.compose(V(px - pw / 2 + 0.7 + c * 0.7, S.h + 0.35, pz - pd / 2 + 0.7 + r * 0.9), new THREE.Quaternion().setFromEuler(new THREE.Euler(rng(), rng() * 3, 0)), V(1, 0.7 + rng() * 0.6, 1));
+        m4.compose(V(px - pw / 2 + 0.7 + c * 0.7, S.h + 0.22, pz - pd / 2 + 0.7 + r * 0.9), new THREE.Quaternion().setFromEuler(new THREE.Euler((rng() - 0.5) * 0.25, rng() * 6.28, (rng() - 0.5) * 0.25)), V(1, 0.8 + rng() * 0.4, 1).multiplyScalar(0.9 + rng() * 0.5));
         cropsIM.setMatrixAt(ci, m4);
         cropsIM.setColorAt(ci++, new THREE.Color().setHSL(0.25 + rng() * 0.08, 0.5, 0.3 + rng() * 0.15));
       }
@@ -329,8 +346,25 @@ export function buildRealm(scene, ctx) {
       scene.add(f);
       folk.push(f);
     }
+    // 写实村民：粗布短褐（麻/土褐/灰青），部分戴斗笠
+    humanBase().then((base) => {
+      if (!base) return;
+      const robes = [0x8a7a5e, 0x6b5a44, 0x5d6a6e, 0x7a6a52, 0x4f5a4a];
+      folk.forEach((f, i) => {
+        const straw = f.userData.upper.children.some((c) => c.geometry?.type === 'ConeGeometry');
+        f.clear();
+        const h = makeHuman(base, { robe: robes[i % robes.length], inner: 0xd8d0bd, hat: straw ? 'straw' : 'bun', height: 1.66 + (i % 3) * 0.04 });
+        f.add(h);
+        f.userData.human = h;
+      });
+    });
     updaters.push((dt, t) => {
-      for (const f of folk) f.userData.upper.rotation.x = f.userData.bend ? 0.55 + Math.sin(t * 1.4 + f.userData.ph) * 0.25 : Math.sin(t * 0.5 + f.userData.ph) * 0.05;
+      for (const f of folk) {
+        const a = f.userData.bend ? 0.55 + Math.sin(t * 1.4 + f.userData.ph) * 0.25 : Math.sin(t * 0.5 + f.userData.ph) * 0.05;
+        const h = f.userData.human;
+        if (h) { h.userData.pose('mixamorigSpine', a * 0.35, 0, 0); h.userData.pose('mixamorigSpine1', a * 0.45, 0, 0); }
+        else f.userData.upper.rotation.x = a;
+      }
     });
     landmarks.push({ name: '青溪村', x: S.x, z: S.z, r: 28 });
   }

@@ -314,6 +314,7 @@ export function buildGrass(scene, { heightTex, mapMin, mapSize, count = 60000, r
         diffuseColor.rgb *= mix(gRoot, gTip, smoothstep(0.0, 1.0, vT));`);
   };
   const mesh = new THREE.Mesh(geo, mat);
+  mesh.userData.noAO = true;
   mesh.frustumCulled = false;
   mesh.receiveShadow = true;
   mesh.userData.noShadowCast = true;

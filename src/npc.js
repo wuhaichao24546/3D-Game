@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { canvasTex, mulberry } from './tex.js';
+import { humanBase, makeHuman } from './humans.js';
 
 // ---------- NPC：程序化道装人物 + 头顶名牌 + 交互 ----------
 function nameSprite(text, color = '#ffe9a8') {
@@ -69,7 +70,15 @@ export class NPCManager {
 
   // def: {id,name,x,z,robe,trim,hat,tag,tags?,patrol?}
   add(def) {
-    const mesh = buildNpcFigure(def);
+    const mesh = new THREE.Group();
+    const fig = buildNpcFigure(def);
+    mesh.add(fig);
+    // 写实人体加载后替换程序化人物
+    humanBase().then((base) => {
+      if (!base) return;
+      mesh.remove(fig);
+      mesh.add(makeHuman(base, { robe: def.robe, trim: def.trim, hat: def.hat || 'bun' }));
+    });
     const y = this.terrainHeight(def.x, def.z);
     mesh.position.set(def.x, y, def.z);
     const tag = nameSprite(def.name);

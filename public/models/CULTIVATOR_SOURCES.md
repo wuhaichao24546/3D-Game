@@ -15,3 +15,7 @@
 - 贴图：由三视图原图投影烘焙（tools/cultivator_scan/bake.py），无第三方素材。
 - 骨架：复用 Cultivator.glb 的 Mixamo 骨架（MakeHuman CC0 关节），Blender 3.6 自动权重。
 - 生成流程见 tools/cultivator_scan/README.md。加载失败时依次回退 Cultivator.glb、Michelle.glb。
+
+## HDRI 天空光照
+
+`public/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr`：Poly Haven（polyhaven.com，CC0）"Kloofendal 48d Partly Cloudy (Pure Sky)" 1k HDR，用作场景环境光（IBL 反射/漫反射），强度随昼夜变化。

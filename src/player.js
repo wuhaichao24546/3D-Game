@@ -8,7 +8,7 @@ const GRAVITY = 26, JUMP_V = 9.5;
 const loader = new GLTFLoader();
 loader.setDRACOLoader(new DRACOLoader().setDecoderPath('draco/'));
 
-function loadGLB(url) {
+export function loadGLB(url) {
   return new Promise((res, rej) => loader.load(url, res, undefined, rej));
 }
 
@@ -34,7 +34,7 @@ function buildFlySword() {
 }
 
 // 姿态欧拉约定：手臂 x=前后摆(负为后)、z=下垂；前臂 y=屈肘；腿 x 负为前抬、小腿 x 正为屈膝；映射到 Mixamo T-pose 骨骼局部轴
-function armEuler(name, x, y, z) {
+export function armEuler(name, x, y, z) {
   if (name === 'mixamorigLeftArm') return new THREE.Euler(-z, y, x);
   if (name === 'mixamorigRightArm') return new THREE.Euler(z, y, -x);
   if (name === 'mixamorigLeftForeArm' || name === 'mixamorigRightForeArm') return new THREE.Euler(x, 0, z - y);

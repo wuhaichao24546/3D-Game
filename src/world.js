@@ -655,7 +655,6 @@ export function buildWorld(scene, renderer) {
 
   // ---------- floating islands + 殿阁 ----------
   const islandTop = new THREE.MeshStandardMaterial({ map: grassTex, roughness: 1 });
-  const islandRock = new THREE.MeshStandardMaterial({ map: rockTex, roughness: 1 });
   const roofMat = new THREE.MeshStandardMaterial({ color: 0x24303a, roughness: 0.7 });
   const pillarMat = new THREE.MeshStandardMaterial({ color: 0x5d3a26, roughness: 0.9 });
   const islandDefs = [
@@ -668,7 +667,7 @@ export function buildWorld(scene, renderer) {
   const waterfalls = [];
   function buildPavilion(size) {
     const g = new THREE.Group();
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(size, size * 1.1, size * 0.25, 6), islandRock);
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(size, size * 1.1, size * 0.25, 8), stoneMat);
     base.position.y = size * 0.12;
     g.add(base);
     for (const [px, pz] of [[-0.6, -0.6], [0.6, -0.6], [-0.6, 0.6], [0.6, 0.6]]) {
@@ -687,10 +686,30 @@ export function buildWorld(scene, renderer) {
   }
   for (const def of islandDefs) {
     const g = new THREE.Group();
-    const top = new THREE.Mesh(new THREE.CylinderGeometry(def.r, def.r * 0.8, 3, 10), islandTop);
-    const bottom = new THREE.Mesh(new THREE.ConeGeometry(def.r * 0.82, def.r * 2.2, 8), islandRock);
-    bottom.rotation.x = Math.PI;
-    bottom.position.y = -(1.5 + def.r * 1.1);
+    // 浮岛：草顶 + 噪声位移的倒悬岩体（扫描岩石 PBR），轮廓不规则、底部有垂岩
+    const sd = def.x * 0.13 + def.z * 0.07;
+    const edge = (a) => 1 + 0.12 * simplex.noise(Math.cos(a) * 1.6 + sd, Math.sin(a) * 1.6) + 0.05 * simplex.noise(Math.cos(a) * 5 + sd, Math.sin(a) * 5);
+    const topGeo = new THREE.CylinderGeometry(def.r, def.r * 0.97, 1.6, 64, 1);
+    const tp = topGeo.attributes.position;
+    for (let i = 0; i < tp.count; i++) {
+      const x = tp.getX(i), z = tp.getZ(i), k = edge(Math.atan2(z, x));
+      tp.setX(i, x * k); tp.setZ(i, z * k);
+      if (tp.getY(i) > 0) tp.setY(i, tp.getY(i) + 0.35 * simplex.noise(x * 0.15 + sd, z * 0.15) * Math.hypot(x, z) / def.r);
+    }
+    topGeo.computeVertexNormals();
+    const botGeo = new THREE.SphereGeometry(def.r * 0.98, 72, 36, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2);
+    const bp = botGeo.attributes.position;
+    for (let i = 0; i < bp.count; i++) {
+      let x = bp.getX(i), y = bp.getY(i), z = bp.getZ(i);
+      const a = Math.atan2(z, x), d = -y / def.r;
+      const k = edge(a) * (1 + 0.22 * simplex.noise(x * 0.18 + sd, y * 0.18 + z * 0.1) + 0.08 * simplex.noise(x * 0.6, z * 0.6 + y * 0.4));
+      const spike = Math.max(0, simplex.noise(Math.cos(a) * 2.2 + sd, Math.sin(a) * 2.2 + 9)) * 1.4;
+      bp.setXYZ(i, x * k, y * (1.9 + spike * d) - 0.8, z * k);
+    }
+    botGeo.computeVertexNormals();
+    const top = new THREE.Mesh(topGeo, islandTop);
+    const bottom = new THREE.Mesh(botGeo, rockMat);
+    top.castShadow = bottom.castShadow = true; top.receiveShadow = bottom.receiveShadow = true;
     g.add(top, bottom);
     const t = forest.single(def.r > 11 ? 'pine' : 'blossom', def.r * 0.75);
     t.position.set(def.r * 0.35, 1.4, def.r * 0.25);
@@ -750,53 +769,69 @@ export function buildWorld(scene, renderer) {
   });
 
   // ---------- clouds ----------
-  const cloudGeo = new THREE.IcosahedronGeometry(1, 1);
-  const cloudMat = new THREE.MeshStandardMaterial({
-    color: 0xffffff, transparent: true, opacity: 0.65, roughness: 1,
-  });
-  const clouds = new THREE.InstancedMesh(cloudGeo, cloudMat, 70);
+  // 柔边云团贴图（多层噪声叠加的软圆斑），云由多张面向相机的云片组成
+  const puffTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const x = c.getContext('2d');
+    for (let i = 0; i < 26; i++) {
+      const a = rng() * 6.28, r = rng() * 34, px = 64 + Math.cos(a) * r, py = 64 + Math.sin(a) * r * 0.8, rr = 18 + rng() * 26;
+      const gr = x.createRadialGradient(px, py, 0, px, py, rr);
+      gr.addColorStop(0, 'rgba(255,255,255,0.22)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+      x.fillStyle = gr; x.fillRect(0, 0, 128, 128);
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  })();
+  const cluster = (mat, sx, sy, sz, n) => {
+    const g = new THREE.Group();
+    for (let k = 0; k < n; k++) {
+      const sp = new THREE.Sprite(mat);
+      sp.position.set((rng() * 2 - 1) * sx * 0.55, (rng() * 2 - 1) * sy * 0.5 + sy * 0.2, (rng() * 2 - 1) * sz * 0.55);
+      const sc = (sx + sz) * (0.55 + rng() * 0.45);
+      sp.scale.set(sc, sc * (0.45 + rng() * 0.2), 1);
+      g.add(sp);
+    }
+    return g;
+  };
+  const cloudMat = new THREE.SpriteMaterial({ map: puffTex, color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false });
   const cloudData = [];
   for (let i = 0; i < 70; i++) {
-    cloudData.push({
+    const c = {
       x: (rng() * 2 - 1) * 260, z: (rng() * 2 - 1) * 260,
       y: 30 + rng() * 60, sx: 7 + rng() * 14, sy: 1.5 + rng() * 2, sz: 5 + rng() * 9,
       speed: 0.8 + rng() * 1.6,
-    });
+    };
+    c.g = cluster(cloudMat, c.sx, c.sy, c.sz, 7);
+    scene.add(c.g);
+    cloudData.push(c);
   }
-  scene.add(clouds);
   updaters.push((dt) => {
-    for (let i = 0; i < cloudData.length; i++) {
-      const c = cloudData[i];
+    for (const c of cloudData) {
       c.x += dt * c.speed;
       if (c.x > 280) c.x = -280;
-      m.compose(new THREE.Vector3(c.x, c.y, c.z), q.identity(), s.set(c.sx, c.sy, c.sz));
-      clouds.setMatrixAt(i, m);
+      c.g.position.set(c.x, c.y, c.z);
     }
-    clouds.instanceMatrix.needsUpdate = true;
   });
 
   // ---------- 谷地流云（低空流动雾团） ----------
-  const vCloudGeo = new THREE.IcosahedronGeometry(1, 1);
-  const vCloudMat = new THREE.MeshStandardMaterial({
-    color: 0xf2f6f7, transparent: true, opacity: 0.4, roughness: 1, depthWrite: false,
-  });
+  const vCloudMat = new THREE.SpriteMaterial({ map: puffTex, color: 0xf2f6f7, transparent: true, opacity: 0.4, depthWrite: false });
   const VCLOUDS = 36;
-  const vclouds = new THREE.InstancedMesh(vCloudGeo, vCloudMat, VCLOUDS);
   const vcd = [];
   for (let i = 0; i < VCLOUDS; i++) {
     const x = (rng() * 2 - 1) * 200, z = (rng() * 2 - 1) * 200;
-    vcd.push({ x, z, y: terrainHeight(x, z) + 4 + rng() * 10, sx: 10 + rng() * 18, sy: 1.6 + rng() * 1.6, sz: 6 + rng() * 10, speed: 0.9 + rng() * 1.4, ph: rng() * 6 });
+    const c = { x, z, y: terrainHeight(x, z) + 4 + rng() * 10, sx: 10 + rng() * 18, sy: 1.6 + rng() * 1.6, sz: 6 + rng() * 10, speed: 0.9 + rng() * 1.4, ph: rng() * 6 };
+    c.g = cluster(vCloudMat, c.sx, c.sy, c.sz, 5);
+    scene.add(c.g);
+    vcd.push(c);
   }
-  scene.add(vclouds);
   updaters.push((dt, t) => {
-    for (let i = 0; i < VCLOUDS; i++) {
-      const c = vcd[i];
+    for (const c of vcd) {
       c.x += dt * c.speed;
       if (c.x > 240) c.x = -240;
-      m.compose(new THREE.Vector3(c.x, c.y + Math.sin(t * 0.4 + c.ph) * 1.5, c.z), q.identity(), s.set(c.sx, c.sy, c.sz));
-      vclouds.setMatrixAt(i, m);
+      c.g.position.set(c.x, c.y + Math.sin(t * 0.4 + c.ph) * 1.5, c.z);
     }
-    vclouds.instanceMatrix.needsUpdate = true;
   });
 
   // ---------- 丁达尔光束（云隙阳光光柱，随太阳方向） ----------

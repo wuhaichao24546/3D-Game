@@ -6,6 +6,9 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { Player } from './player.js';
 import { Cultivation, LINGGEN } from './cultivation.js';
 import { BeastManager } from './beasts.js';
@@ -194,6 +197,13 @@ async function start() {
   npcs.add({ id: 'guide', name: '引路师妹·小竹', x: 46, z: 70, robe: 0x5d7a5a,
     talk: () => ({ name: '引路师妹·小竹', text: '师兄安好。东北山脊的青霄宗可在寻掌门接取试炼；村中钱掌柜处可沽丹药。左键剑气，R 键大招，T 键灵压阵。', options: [{ label: '离开', fn: () => hud.closeDialogue() }] }) });
   window.__game = Object.assign(window.__game || {}, { scene, camera, player, beasts: null, world, THREE, renderer });
+  // 基于图像的环境光：Poly Haven CC0 天空 HDRI（反射/漫反射 IBL，强度随昼夜）
+  new HDRLoader().load('hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr', (tex) => {
+    tex.mapping = THREE.EquirectangularReflectionMapping;
+    const pm = new THREE.PMREMGenerator(renderer);
+    scene.environment = pm.fromEquirectangular(tex).texture;
+    tex.dispose(); pm.dispose();
+  });
   window.__setCam = (y, p) => { camYaw = y; if (p !== undefined) camPitch = p; };
 
   // ---------- 画质档：高(2x+2048阴影+泛光) 中(1.5x+1024阴影) 低(1x无阴影) ----------
@@ -212,8 +222,33 @@ async function start() {
     const rt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: 4 });
     composer = new EffectComposer(renderer, rt);
     composer.addPass(new RenderPass(scene, camera));
+    // 环境光遮蔽：GTAO。草/粒子/透明体在法线通道里会变成实心片（草是顶点着色器摆动的），生成深度法线前临时隐藏；
+    // SwiftShader 等软件渲染器上 GTAO 输出为 0（画面变黑），检测到即不启用
+    const glRenderer = renderer.getContext().getParameter(renderer.getContext().getExtension('WEBGL_debug_renderer_info')?.UNMASKED_RENDERER_WEBGL || 0x9246) || '';
+    const softwareGL = /swiftshader|llvmpipe|software/i.test(String(glRenderer));
+    if (!softwareGL) {
+      const gtao = new GTAOPass(scene, camera, innerWidth, innerHeight);
+      gtao.updateGtaoMaterial({ radius: 0.6, distanceExponent: 1.5, thickness: 1.5, scale: 1.2, samples: 12 });
+      gtao.blendIntensity = 0.85;
+      gtao._overrideVisibility = function () {
+        this._originalVisible = [];
+        const keep = (o) => {
+          if (!(o.isMesh || o.isPoints || o.isLine || o.isSprite)) return true;
+          const m = o.material;
+          if (!m || Array.isArray(m)) return false;
+          return !(m.transparent || m.alphaTest > 0 || m.isShaderMaterial || o.userData.noAO);
+        };
+        this.scene.traverseVisible((o) => {
+          if (keep(o)) return;
+          if (o.visible) { this._originalVisible.push(o); o.visible = false; }
+        });
+      };
+      gtao._restoreVisibility = function () { for (const o of this._originalVisible || []) o.visible = true; this._visibilityCache.length = 0; };
+      composer.addPass(gtao);
+    }
     composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.38, 0.55, 0.82));
     composer.addPass(new OutputPass());
+    composer.addPass(new SMAAPass());
   }
   function applyQuality() {
     const q = QUALITY[quality];
@@ -492,6 +527,7 @@ async function start() {
 
     world.setFocus(player.position);
     const dayNight = world.update(dt, t);
+    scene.environmentIntensity = 0.08 + dayNight.day * 0.42;
     world.setShadowAnchor(player.position);
     // 帧率监控：连续 6 秒低于 40fps 自动降一档
     fpsT += dt; fpsN++;
