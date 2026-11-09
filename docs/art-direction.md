@@ -41,3 +41,11 @@
 ## 6. 性能约束
 
 贴图控制在 1K–2K，植被用 instancing/billboard，粒子总量 <2000；目标普通笔记本 60fps。
+
+## 7. 落地记录（2026-11 画质升级）
+
+- **主角**：`models/CultivatorScan.glb`（三视图生成 + 本地贴图烘焙 + Mixamo 骨架），回退 `Cultivator.glb`（MakeHuman）→ `Michelle.glb`；道袍/袖/发饰为程序化挂点，负剑挂 Spine2。
+- **NPC/村民**：复用 `Cultivator.glb`（SkeletonUtils 克隆），按角色换袍色/腰带/头饰（发髻玉簪、道冠、斗笠），程序化站姿/躬身；加载失败保留原程序化人物。
+- **环境**：Poly Haven 扫描 PBR（地形四层混合、树皮/岩石/草）；6 万实例 GPU 草场（顶点风动，30m 半径）；ez-tree 程序化树（近高模/远低模）。
+- **浮空岛/云**：岛体为噪声位移倒悬岩（扫描岩石 PBR）+ 草顶；云与谷雾改为多层噪声软边 Sprite 云团，随风漂移。
+- **光照/后处理**：ACES 色调映射 + UnrealBloom；Poly Haven CC0 HDRI（kloofendal_48d）作 IBL，强度随昼夜；高画质档启用 GTAO（环境光遮蔽）+ SMAA；SwiftShader 等软件渲染器自动关闭 GTAO。
